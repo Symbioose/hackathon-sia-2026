@@ -39,10 +39,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.add_middleware(
-    TrustedHostMiddleware, allowed_hosts=["localhost:5173"]
-)
-
 
 @app.get("/health")
 def health() -> dict[str, str]:
