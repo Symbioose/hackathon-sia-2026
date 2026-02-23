@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import math
 import os
+import re
 import time
 from datetime import UTC, datetime
 from io import StringIO
@@ -24,6 +25,7 @@ except ModuleNotFoundError:
 
 
 BASE_URL = "https://public-api.meteofrance.fr/public/DPClim/v1"
+GEOPF_WFS_URL = "https://data.geopf.fr/wfs/ows"
 CONNECT_TIMEOUT = 10
 READ_TIMEOUT = 120
 POLL_SECONDS = 2
@@ -59,11 +61,12 @@ def fetch_monthly_rainfall_average_last_ten_years_from_geojson(
     api_key: str | None = None,
 ) -> dict[str, Any]:
     key = _api_key(api_key)
-    lon, lat = _centroid_lon_lat(input_path)
+    x, y = _centroid_lambert93(input_path)
+    lon, lat = _lambert93_to_wgs84(x, y)
 
-    params: dict[str, str] = {"parametre": "precipitation"}
-    if code_departement and code_departement.strip():
-        params["id-departement"] = code_departement.strip()
+    department = _resolve_department_code(input_path, code_departement, x, y)
+
+    params: dict[str, str] = {"id-departement": department}
     stations = _json_get("/liste-stations/quotidienne", key, params)
     if not isinstance(stations, list) or not stations:
         raise RuntimeError("Aucune station retournee par Meteo-France.")
@@ -109,6 +112,7 @@ def fetch_monthly_rainfall_average_last_ten_years_from_geojson(
         averages[key_month] = round(sum(values) / len(values), 2) if values else None
 
     return {
+        "department_code": department,
         "station_id": station_code,
         "station_name": station.get("nom"),
         "station_distance_km": None
@@ -129,27 +133,148 @@ def fetch_monthly_rainfall_average_last_ten_years_from_geojson(
 
 def _api_key(provided: str | None) -> str:
     if provided and provided.strip():
-        return provided.strip()
+        return _normalize_api_key(provided)
     for env_name in ("MARIANNE_API_KEY", "METEOFRANCE_API_KEY"):
         value = os.getenv(env_name)
         if value and value.strip():
-            return value.strip()
+            return _normalize_api_key(value)
     raise RuntimeError("Cle API manquante: api_key ou variable d'env.")
 
 
-def _centroid_lon_lat(input_path: str | Path) -> tuple[float, float]:
+def _normalize_api_key(raw_value: str) -> str:
+    value = raw_value.strip().strip('"').strip("'")
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    return value
+
+
+def _auth_headers(api_key: str) -> dict[str, str]:
+    return {
+        "accept": "*/*",
+        "apikey": api_key,
+        "x-api-key": api_key,
+        "Authorization": f"Bearer {api_key}",
+    }
+
+
+def _centroid_lambert93(input_path: str | Path) -> tuple[float, float]:
     bbox = get_emprise(input_path, buffer=0)
     x = (bbox["xmin"] + bbox["xmax"]) / 2.0
     y = (bbox["ymin"] + bbox["ymax"]) / 2.0
+    return x, y
+
+
+def _lambert93_to_wgs84(x: float, y: float) -> tuple[float, float]:
     lon, lat = transform("EPSG:2154", "EPSG:4326", [x], [y])
     return float(lon[0]), float(lat[0])
+
+
+def _resolve_department_code(
+    input_path: str | Path,
+    provided: str | None,
+    x: float,
+    y: float,
+) -> str:
+    if provided and provided.strip():
+        normalized = _normalize_department_code(provided)
+        if normalized:
+            return normalized
+        raise RuntimeError(f"code_departement invalide: {provided}")
+    return _department_code_from_bdtopo(input_path, x, y)
+
+
+def _department_code_from_bdtopo(input_path: str | Path, x: float, y: float) -> str:
+    del input_path  # garde la signature explicite; non utilise ici
+    delta = 10.0
+    base_params = {
+        "SERVICE": "WFS",
+        "VERSION": "1.1.0",
+        "REQUEST": "GetFeature",
+        "TYPENAME": "BDTOPO_V3:departement",
+        "SRSNAME": "EPSG:2154",
+        "BBOX": f"{x - delta},{y - delta},{x + delta},{y + delta},EPSG:2154",
+    }
+
+    last_error = "Aucun resultat"
+    for output_format in ("application/json", "json", "geojson"):
+        params = {**base_params, "OUTPUTFORMAT": output_format}
+        try:
+            with HTTP.get(
+                GEOPF_WFS_URL,
+                params=params,
+                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+            ) as response:
+                if response.status_code != 200:
+                    last_error = f"HTTP {response.status_code}"
+                    continue
+                content_type = response.headers.get("Content-Type", "").lower()
+                if "xml" in content_type or response.content[:5].lower().startswith(b"<?xml"):
+                    last_error = response.text[:250]
+                    continue
+                payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            last_error = str(exc)
+            continue
+
+        code = _extract_department_code_from_payload(payload)
+        if code:
+            return code
+
+    raise RuntimeError(f"Impossible de determiner le code departement via BDTOPO_V3:departement ({last_error}).")
+
+
+def _extract_department_code_from_payload(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    features = payload.get("features")
+    if not isinstance(features, list):
+        return None
+
+    preferred_keys = (
+        "CODE_DEPT",
+        "CODE_DEP",
+        "CODE_DEPARTEMENT",
+        "INSEE_DEP",
+        "INSEE_DEPT",
+        "CODE_INSEE",
+        "CODE",
+    )
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        props = feature.get("properties")
+        if not isinstance(props, dict):
+            continue
+        for key in preferred_keys:
+            if key in props:
+                normalized = _normalize_department_code(props.get(key))
+                if normalized:
+                    return normalized
+        for value in props.values():
+            normalized = _normalize_department_code(value)
+            if normalized:
+                return normalized
+    return None
+
+
+def _normalize_department_code(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+    value = str(raw_value).strip().upper().replace(" ", "")
+    if not value:
+        return None
+    if value in {"2A", "2B"}:
+        return value
+    if re.fullmatch(r"\d{1,3}", value):
+        return value.zfill(2) if len(value) == 1 else value
+    return None
 
 
 def _json_get(path: str, api_key: str, params: dict[str, str]) -> Any:
     with HTTP.get(
         f"{BASE_URL}{path}",
         params=params,
-        headers={"accept": "*/*", "apikey": api_key},
+        headers=_auth_headers(api_key),
         timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
     ) as response:
         if response.status_code not in (200, 202):
@@ -224,20 +349,38 @@ def _distance_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
 
 
 def _extract_order_id(payload: Any) -> str:
-    if isinstance(payload, dict):
-        for key in ("return", "id-cmde", "idCmde", "id_commande"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    raise RuntimeError("Identifiant de commande introuvable.")
+    # 1. Si Météo-France renvoie directement l'ID sous forme de texte ou de nombre simple
+    if isinstance(payload, (str, int)):
+        return str(payload).strip()
 
+    # 2. Si c'est un dictionnaire (JSON)
+    if isinstance(payload, dict):
+        # Toutes les clés historiquement utilisées par MF
+        cles_possibles = ("return", "id-cmde", "idCmde", "id_commande", "numeroDemande", "id")
+        
+        # On cherche d'abord au premier niveau
+        for key in cles_possibles:
+            val = payload.get(key)
+            if val is not None and str(val).strip():
+                return str(val).strip()
+                
+        # On cherche ensuite au second niveau (s'ils l'ont caché dans un sous-objet)
+        for sous_structure in payload.values():
+            if isinstance(sous_structure, dict):
+                for key in cles_possibles:
+                    val = sous_structure.get(key)
+                    if val is not None and str(val).strip():
+                        return str(val).strip()
+
+    # 3. Si on n'a vraiment rien trouvé, on fait crasher MAIS en affichant ce qu'on a reçu !
+    raise RuntimeError(f"Identifiant de commande introuvable. Météo-France a renvoyé : {payload}")
 
 def _download_csv(order_id: str, api_key: str) -> str:
     for _ in range(POLL_ATTEMPTS):
         with HTTP.get(
             f"{BASE_URL}/commande/fichier",
             params={"id-cmde": order_id},
-            headers={"accept": "*/*", "apikey": api_key},
+            headers=_auth_headers(api_key),
             timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
         ) as response:
             if response.status_code in (200, 201):
@@ -253,28 +396,39 @@ def _download_csv(order_id: str, api_key: str) -> str:
             raise RuntimeError(f"Erreur commande/fichier ({response.status_code}): {response.text[:250]}")
     raise RuntimeError(f"Commande {order_id} non prete.")
 
-
 def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
-    reader = csv.DictReader(StringIO(csv_text), delimiter=";")
+    # 1. Nettoyer les lignes vides ou les métadonnées (qui commencent par #)
+    lignes_propres = [ligne for ligne in csv_text.splitlines() if ligne.strip() and not ligne.startswith("#")]
+    
+    reader = csv.DictReader(lignes_propres, delimiter=";")
     if reader.fieldnames is None:
-        raise RuntimeError("CSV vide.")
+        raise RuntimeError("CSV vide ou mal formaté.")
 
     lowered = {name: name.strip().lower() for name in reader.fieldnames}
-    date_col = next((name for name, low in lowered.items() if "date" in low), None)
+    
+    # 2. LA CORRECTION : Chercher 'aaaa' car Météo-France appelle la colonne "AAAAMMJJ"
+    date_col = next((name for name, low in lowered.items() if "date" in low or "aaaa" in low or "jour" in low), None)
+    
+    # La colonne des pluies s'appelle généralement "RR" chez Météo-France
     rain_col = next(
         (name for name, low in lowered.items() if "rr" in low or "precip" in low or "cumul" in low),
         None,
     )
+    
     if date_col is None or rain_col is None:
-        raise RuntimeError("Colonnes date/pluie introuvables.")
+        raise RuntimeError(f"Colonnes introuvables. Météo-France a renvoyé ces colonnes : {list(lowered.keys())}")
 
     totals: dict[int, float] = {m: 0.0 for m in range(1, 13)}
     rows = 0
     for row in reader:
         raw_date = str(row.get(date_col, "")).strip()
         raw_rain = str(row.get(rain_col, "")).strip().lower()
+        
+        # Ignorer les données manquantes (MQ = Manquant)
         if not raw_date or not raw_rain or raw_rain in {"mq", "nan", "null"}:
             continue
+            
+        # Gérer les traces de précipitations
         if raw_rain in {"tr", "trace"}:
             rain = 0.0
         else:
@@ -284,6 +438,7 @@ def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
                 continue
 
         month = None
+        # Météo-France renvoie souvent le format YYYYMMDD (ex: 20160523)
         for token in (raw_date, raw_date[:10]):
             for fmt in ("%Y-%m-%d", "%Y%m%d", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S"):
                 try:
@@ -293,6 +448,7 @@ def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
                     pass
             if month is not None:
                 break
+        
         if month is None:
             continue
 
@@ -300,5 +456,6 @@ def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
         rows += 1
 
     if rows == 0:
-        raise RuntimeError("Aucune donnee pluie exploitable.")
+        raise RuntimeError("Aucune donnée pluie exploitable dans ce fichier pour cette année.")
+        
     return {month: round(value, 3) for month, value in totals.items()}
