@@ -1,12 +1,9 @@
-"""Récupère l'emprise (bbox) d'un GeoJSON sans dépendance externe."""
-
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
 import requests
-
 
 def _iter_points(coords):
     """Parcourt récursivement coordinates et yield (x, y)."""
