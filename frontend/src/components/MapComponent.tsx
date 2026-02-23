@@ -2,50 +2,42 @@ import React, { useEffect } from 'react';
 import {
   MapContainer,
   TileLayer,
-  Marker,
-  Popup,
   Rectangle,
   useMap,
   GeoJSON,
   ImageOverlay,
 } from 'react-leaflet';
 import L from 'leaflet';
-import { AnalysisResult, AnalysisType, GeoJsonFeatureCollection, LatLng, Wgs84Bounds } from '../types';
+import { AnalysisResult, AnalysisType, GeoJsonFeatureCollection, Wgs84Bounds, ZoneStats } from '../types';
+
+// Fix Leaflet default icon issue with bundlers
+import 'leaflet/dist/leaflet.css';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
 
 interface MapComponentProps {
-  searchLocation: { coords: LatLng; name: string } | null;
   zoneGeoJsonWgs84: GeoJsonFeatureCollection | null;
   paddedBoundsWgs84: Wgs84Bounds | null;
   analysisResults: Record<AnalysisType, AnalysisResult>;
+  zoneStats: ZoneStats | null;
 }
-
-// Component to handle map movements
-interface SearchLocationHandlerProps {
-  location: { coords: LatLng; name: string } | null;
-}
-
-const SearchLocationHandler: React.FC<SearchLocationHandlerProps> = ({
-  location,
-}) => {
-  const map = useMap();
-
-  useEffect(() => {
-    if (location) {
-      map.setView([location.coords.lat, location.coords.lng], 11);
-    }
-  }, [location, map]);
-
-  return null;
-};
 
 interface ZoneLayersProps {
   zoneGeoJsonWgs84: GeoJsonFeatureCollection | null;
   paddedBoundsWgs84: Wgs84Bounds | null;
+  zoneStats: ZoneStats | null;
 }
 
 const ZoneLayers: React.FC<ZoneLayersProps> = ({
   zoneGeoJsonWgs84,
   paddedBoundsWgs84,
+  zoneStats,
 }) => {
   const map = useMap();
 
@@ -62,6 +54,8 @@ const ZoneLayers: React.FC<ZoneLayersProps> = ({
     );
   }, [paddedBoundsWgs84, map]);
 
+  const formatNumber = (n: number) => n.toLocaleString('fr-FR');
+
   const rectangleBounds: [[number, number], [number, number]] | null =
     paddedBoundsWgs84
       ? [
@@ -70,16 +64,54 @@ const ZoneLayers: React.FC<ZoneLayersProps> = ({
         ]
       : null;
 
+  const tooltipContent = zoneStats ? `
+    <div style="font-size: 12px; line-height: 1.5; min-width: 200px;">
+      <div style="font-weight: bold; margin-bottom: 6px; font-size: 13px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Zone Information</div>
+      <div style="margin-bottom: 3px;"><strong>CRS:</strong> ${zoneStats.crsDetected}</div>
+      <div style="margin-top: 6px; font-weight: 600; margin-bottom: 3px;">BBox (Lambert-93) padded:</div>
+      <div style="padding-left: 8px; margin-bottom: 2px;">X: ${formatNumber(zoneStats.bboxLambert93Padded.minX)} → ${formatNumber(zoneStats.bboxLambert93Padded.maxX)}</div>
+      <div style="padding-left: 8px; margin-bottom: 3px;">Y: ${formatNumber(zoneStats.bboxLambert93Padded.minY)} → ${formatNumber(zoneStats.bboxLambert93Padded.maxY)}</div>
+      <div style="margin-top: 6px; margin-bottom: 2px;"><strong>Surface:</strong> ${formatNumber(zoneStats.areaM2)} m² (${formatNumber(zoneStats.areaHa)} ha)</div>
+      <div><strong>Périmètre:</strong> ${formatNumber(zoneStats.perimeterM)} m (${formatNumber(zoneStats.perimeterKm)} km)</div>
+    </div>
+  ` : '';
+
   return (
     <>
       {zoneGeoJsonWgs84 && (
         <GeoJSON
+          key={JSON.stringify(zoneGeoJsonWgs84)}
           data={zoneGeoJsonWgs84 as any}
+          style={{ color: '#3388ff', weight: 3, fillOpacity: 0.2 }}
         />
       )}
 
-      {rectangleBounds && (
-        <Rectangle bounds={rectangleBounds} weight={2} />
+      {rectangleBounds && zoneStats && (
+        <Rectangle
+          bounds={rectangleBounds}
+          pathOptions={{
+            color: '#ff7800',
+            weight: 2,
+            fillOpacity: 0,
+            interactive: true,
+          }}
+          eventHandlers={{
+            mouseover: (e) => {
+              const layer = e.target;
+              layer.bindTooltip(tooltipContent, {
+                permanent: false,
+                sticky: true,
+                direction: 'top',
+                offset: [0, -10],
+                className: 'zone-tooltip'
+              }).openTooltip();
+            },
+            mouseout: (e) => {
+              const layer = e.target;
+              layer.closeTooltip();
+            }
+          }}
+        />
       )}
     </>
   );
@@ -93,22 +125,11 @@ const SATELLITE_TILE = {
 };
 
 export const MapComponent: React.FC<MapComponentProps> = ({
-  searchLocation,
   zoneGeoJsonWgs84,
   paddedBoundsWgs84,
   analysisResults,
+  zoneStats,
 }) => {
-  const searchMarkerIcon = new L.Icon({
-    iconUrl:
-      'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-    shadowUrl:
-      'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-  });
-
   return (
     <MapContainer
       center={[48.8566, 2.3522]} // Paris as default
@@ -121,11 +142,10 @@ export const MapComponent: React.FC<MapComponentProps> = ({
         maxZoom={SATELLITE_TILE.maxZoom}
       />
 
-      <SearchLocationHandler location={searchLocation} />
-
       <ZoneLayers
         zoneGeoJsonWgs84={zoneGeoJsonWgs84}
         paddedBoundsWgs84={paddedBoundsWgs84}
+        zoneStats={zoneStats}
       />
 
       {paddedBoundsWgs84 &&
@@ -142,16 +162,6 @@ export const MapComponent: React.FC<MapComponentProps> = ({
               opacity={0.7}
             />
           ))}
-
-      {/* Search result marker */}
-      {searchLocation && (
-        <Marker
-          position={[searchLocation.coords.lat, searchLocation.coords.lng]}
-          icon={searchMarkerIcon}
-        >
-          <Popup>{searchLocation.name}</Popup>
-        </Marker>
-      )}
     </MapContainer>
   );
 };

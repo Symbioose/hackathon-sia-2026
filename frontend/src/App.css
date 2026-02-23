@@ -29,3 +29,20 @@ body,
 .leaflet-popup-tip {
   background-color: white;
 }
+
+/* Custom tooltip styles */
+.zone-tooltip {
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+  padding: 8px 12px;
+  font-family: inherit;
+}
+
+.zone-tooltip .leaflet-tooltip-left::before,
+.zone-tooltip .leaflet-tooltip-right::before,
+.zone-tooltip .leaflet-tooltip-top::before,
+.zone-tooltip .leaflet-tooltip-bottom::before {
+  border-color: transparent;
+}

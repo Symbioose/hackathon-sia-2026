@@ -1,16 +1,13 @@
 import React, { useRef } from 'react';
+import JSZip from 'jszip';
 import {
   AnalysisResult,
   AnalysisType,
-  LatLng,
   ZonePadding,
   ZoneStats,
 } from '../types';
-import { SearchBar } from './SearchBar';
 
 interface SidePanelProps {
-  onLocationFound: (coords: LatLng, name: string) => void;
-
   paddingMeters: ZonePadding;
   onPaddingMetersChange: (padding: ZonePadding) => void;
 
@@ -19,7 +16,6 @@ interface SidePanelProps {
   zoneError: string | null;
   onGeoJsonFileSelected: (file: File) => void;
   onClearZone: () => void;
-  onDownloadZone: () => void;
 
   analysisOptions: Array<{ type: AnalysisType; label: string }>;
   selectedAnalyses: Record<AnalysisType, boolean>;
@@ -29,7 +25,6 @@ interface SidePanelProps {
 }
 
 export const SidePanel: React.FC<SidePanelProps> = ({
-  onLocationFound,
   paddingMeters,
   onPaddingMetersChange,
   geoJsonFileName,
@@ -37,7 +32,6 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   zoneError,
   onGeoJsonFileSelected,
   onClearZone,
-  onDownloadZone,
   analysisOptions,
   selectedAnalyses,
   onSelectedAnalysesChange,
@@ -58,7 +52,42 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     e.target.value = '';
   };
 
-  const formatNumber = (n: number) => n.toLocaleString('fr-FR');
+  const handleDownloadAll = async () => {
+    const successfulResults = Object.values(analysisResults).filter(
+      (result) => result.status === 'success' && result.url
+    );
+
+    if (successfulResults.length === 0) return;
+
+    const zip = new JSZip();
+
+    try {
+      // Fetch all files and add them to the ZIP
+      await Promise.all(
+        successfulResults.map(async (result) => {
+          const response = await fetch(`http://localhost:8000${result.url}`);
+          const blob = await response.blob();
+          // Extract filename from URL path
+          const urlParts = result?.url?.split('/');
+          const fileName = urlParts && urlParts.length > 0 ? urlParts.at(-1) ?? 'result' : 'result';
+          zip.file(fileName, blob);
+        })
+      );
+
+      // Generate the combined ZIP
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'analyses_results.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error creating ZIP:', error);
+    }
+  };
 
   const selectedCount = analysisOptions.filter((opt) => selectedAnalyses[opt.type]).length;
   const progressItems = analysisOptions.filter((opt) => selectedAnalyses[opt.type]);
@@ -140,45 +169,12 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           )}
 
           {zoneStats && (
-            <div className="mt-3 bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+            <div className="mt-3 bg-white border border-gray-200 rounded-lg p-3">
               <div className="text-xs text-gray-600">
                 <div className="font-semibold text-gray-800">Imported file</div>
                 <div className="truncate">{geoJsonFileName ?? '—'}</div>
-                <div className="mt-1">
-                  <span className="font-medium">CRS detected:</span> {zoneStats.crsDetected}
-                </div>
               </div>
 
-              <div className="text-xs text-gray-700">
-                <div className="font-semibold text-gray-800">BBox (Lambert-93) padded</div>
-                <div>
-                  X: {formatNumber(zoneStats.bboxLambert93Padded.minX)} → {formatNumber(zoneStats.bboxLambert93Padded.maxX)}
-                </div>
-                <div>
-                  Y: {formatNumber(zoneStats.bboxLambert93Padded.minY)} → {formatNumber(zoneStats.bboxLambert93Padded.maxY)}
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-700">
-                <div className="font-semibold text-gray-800">Surface</div>
-                <div>
-                  {formatNumber(zoneStats.areaM2)} m² ({formatNumber(zoneStats.areaHa)} ha)
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-700">
-                <div className="font-semibold text-gray-800">Périmètre</div>
-                <div>
-                  {formatNumber(zoneStats.perimeterM)} m ({formatNumber(zoneStats.perimeterKm)} km)
-                </div>
-              </div>
-
-              <button
-                onClick={onDownloadZone}
-                className="w-full px-3 py-2 bg-green-600 text-white rounded font-medium text-sm hover:bg-green-700 transition"
-              >
-                Download GeoJSON (WGS84 + stats)
-              </button>
             </div>
           )}
         </div>
@@ -243,27 +239,27 @@ export const SidePanel: React.FC<SidePanelProps> = ({
               const statusLabel = statusLabelMap[item.status];
 
               return (
-                <div
-                  key={opt.type}
-                  className="text-xs text-gray-700 flex items-center justify-between"
-                >
-                  <span>{item.label}</span>
-                  <span className="text-gray-500">{statusLabel}</span>
+                <div key={opt.type} className="border border-gray-200 rounded p-2">
+                  <div className="text-xs text-gray-700 flex items-center justify-between">
+                    <span>{item.label}</span>
+                    <span className="text-gray-500">{statusLabel}</span>
+                  </div>
+                  {item.status === 'error' && item.error && (
+                    <div className="text-xs text-red-600 mt-1">{item.error}</div>
+                  )}
                 </div>
               );
             })}
           </div>
-        </div>
 
-        {/* Search Section */}
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-2 uppercase">
-            Search Location
-          </h2>
-          <SearchBar onLocationFound={onLocationFound} />
-          <p className="text-xs text-gray-500 mt-2">
-            Search for a city or region to center the map
-          </p>
+          {doneCount > 0 && (
+            <button
+              onClick={handleDownloadAll}
+              className="mt-3 w-full px-3 py-2 bg-green-600 text-white rounded font-medium text-sm hover:bg-green-700 transition"
+            >
+              Download All ({doneCount} {doneCount === 1 ? 'file' : 'files'})
+            </button>
+          )}
         </div>
 
         {/* Instructions */}
@@ -275,7 +271,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
             <li>1. Import a GeoJSON file (Polygon/MultiPolygon)</li>
             <li>2. Adjust padding (meters in Lambert-93)</li>
             <li>3. Select analyses and run the requests</li>
-            <li>4. The padded rectangle and raster layers are shown on the map</li>
+            <li>4. Download the generated files</li>
           </ol>
         </div>
       </div>
