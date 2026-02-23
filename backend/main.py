@@ -40,7 +40,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-load_dotenv()  
+load_dotenv()
 
 
 @app.get("/health")
@@ -265,7 +265,7 @@ def rpg_download(
         "layer_name": layer_name,
         "shp_path": str(shp_path),
         "zip_path": str(zip_path),
-        "download_url": f"/files/rpg/{run_id}/{Path(shp_path).parent.name}/{Path(zip_path).name}",
+        "download_url": f"/files/rpg/{run_id}/{Path(zip_path).name}",
     }
 
 

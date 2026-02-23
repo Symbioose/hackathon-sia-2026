@@ -4,7 +4,6 @@ import {
   AnalysisStatus,
   AnalysisType,
   GeoJsonFeatureCollection,
-  LatLng,
   ZonePadding,
   ZoneStats,
 } from './types';
@@ -13,7 +12,6 @@ import { SidePanel } from './components/SidePanel';
 import {
   buildZoneFromGeoJson,
   GeoJsonZoneError,
-  withStatsOnFeatures,
 } from './utils/geoJsonZone';
 import './App.css';
 
@@ -44,17 +42,61 @@ function App(): React.ReactNode {
     { type: 'bassin_versant', label: 'Bassin versant' },
   ];
 
-  const [searchLocation, setSearchLocation] = useState<{
-    coords: LatLng;
-    name: string;
-  } | null>(null);
+  // Initialize state from localStorage or defaults
+  const getInitialState = () => {
+    try {
+      const saved = localStorage.getItem('hackathon-app-state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          paddingMeters: parsed.paddingMeters || { buffer: 0 },
+          rawGeoJson: parsed.rawGeoJson || null,
+          geoJsonFileName: parsed.geoJsonFileName || null,
+          selectedAnalyses: parsed.selectedAnalyses || {
+            mnt: false,
+            axe_ruissellement: false,
+            occupation_sols: false,
+            culture: false,
+            bassin_versant: false,
+          },
+          analysisResults: parsed.analysisResults || {
+            mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
+            axe_ruissellement: { type: 'axe_ruissellement', label: 'Axe de ruissellement', status: 'idle' },
+            occupation_sols: { type: 'occupation_sols', label: 'Occupation des sols', status: 'idle' },
+            culture: { type: 'culture', label: 'Culture', status: 'idle' },
+            bassin_versant: { type: 'bassin_versant', label: 'Bassin versant', status: 'idle' },
+          },
+        };
+      }
+    } catch (error) {
+      console.error('Error loading state from localStorage:', error);
+    }
+    return {
+      paddingMeters: { buffer: 0 },
+      rawGeoJson: null,
+      geoJsonFileName: null,
+      selectedAnalyses: {
+        mnt: false,
+        axe_ruissellement: false,
+        occupation_sols: false,
+        culture: false,
+        bassin_versant: false,
+      },
+      analysisResults: {
+        mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
+        axe_ruissellement: { type: 'axe_ruissellement', label: 'Axe de ruissellement', status: 'idle' },
+        occupation_sols: { type: 'occupation_sols', label: 'Occupation des sols', status: 'idle' },
+        culture: { type: 'culture', label: 'Culture', status: 'idle' },
+        bassin_versant: { type: 'bassin_versant', label: 'Bassin versant', status: 'idle' },
+      },
+    };
+  };
 
-  const [paddingMeters, setPaddingMeters] = useState<ZonePadding>({
-    buffer: 0,
-  });
+  const initialState = getInitialState();
 
-  const [rawGeoJson, setRawGeoJson] = useState<RawGeoJson | null>(null);
-  const [geoJsonFileName, setGeoJsonFileName] = useState<string | null>(null);
+  const [paddingMeters, setPaddingMeters] = useState<ZonePadding>(initialState.paddingMeters);
+  const [rawGeoJson, setRawGeoJson] = useState<RawGeoJson | null>(initialState.rawGeoJson);
+  const [geoJsonFileName, setGeoJsonFileName] = useState<string | null>(initialState.geoJsonFileName);
   const [zoneError, setZoneError] = useState<string | null>(null);
 
   const [zone, setZone] = useState<
@@ -63,35 +105,27 @@ function App(): React.ReactNode {
 
   const [selectedAnalyses, setSelectedAnalyses] = useState<
     Record<AnalysisType, boolean>
-  >({
-    mnt: false,
-    axe_ruissellement: false,
-    occupation_sols: false,
-    culture: false,
-    bassin_versant: false,
-  });
+  >(initialState.selectedAnalyses);
 
   const [analysisResults, setAnalysisResults] = useState<
     Record<AnalysisType, AnalysisResult>
-  >({
-    mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
-    axe_ruissellement: {
-      type: 'axe_ruissellement',
-      label: 'Axe de ruissellement',
-      status: 'idle',
-    },
-    occupation_sols: {
-      type: 'occupation_sols',
-      label: 'Occupation des sols',
-      status: 'idle',
-    },
-    culture: { type: 'culture', label: 'Culture', status: 'idle' },
-    bassin_versant: {
-      type: 'bassin_versant',
-      label: 'Bassin versant',
-      status: 'idle',
-    },
-  });
+  >(initialState.analysisResults);
+
+  // Save state to localStorage whenever key states change
+  useEffect(() => {
+    try {
+      const stateToSave = {
+        paddingMeters,
+        rawGeoJson,
+        geoJsonFileName,
+        selectedAnalyses,
+        analysisResults,
+      };
+      localStorage.setItem('hackathon-app-state', JSON.stringify(stateToSave));
+    } catch (error) {
+      console.error('Error saving state to localStorage:', error);
+    }
+  }, [paddingMeters, rawGeoJson, geoJsonFileName, selectedAnalyses, analysisResults]);
 
   useEffect(() => {
     const getErrorMessage = (err: unknown): string => {
@@ -129,11 +163,27 @@ function App(): React.ReactNode {
       });
       return reset;
     });
+    // Clear localStorage when zone is removed
+    try {
+      localStorage.removeItem('hackathon-app-state');
+    } catch (error) {
+      console.error('Error clearing localStorage:', error);
+    }
   };
 
   const handleGeoJsonFileSelected = async (file: File) => {
     setZoneError(null);
     setGeoJsonFileName(file.name);
+
+    // Reset analysis results when a new GeoJSON is uploaded
+    setAnalysisResults({
+      mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
+      axe_ruissellement: { type: 'axe_ruissellement', label: 'Axe de ruissellement', status: 'idle' },
+      occupation_sols: { type: 'occupation_sols', label: 'Occupation des sols', status: 'idle' },
+      culture: { type: 'culture', label: 'Culture', status: 'idle' },
+      bassin_versant: { type: 'bassin_versant', label: 'Bassin versant', status: 'idle' },
+    });
+
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as unknown;
@@ -146,28 +196,6 @@ function App(): React.ReactNode {
       setZoneError(message);
       setRawGeoJson(null);
     }
-  };
-
-  const handleDownloadZone = () => {
-    if (!zone) return;
-
-    const fcWithStats = withStatsOnFeatures(zone.geoJsonWgs84, zone.stats);
-
-    const geojsonText = JSON.stringify(fcWithStats, null, 2);
-    const blob = new Blob([geojsonText], { type: 'application/geo+json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const baseName = geoJsonFileName ? geoJsonFileName.replace(/\.[^.]+$/, '') : 'zone';
-    a.download = `${baseName}_wgs84_with_stats.geojson`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleLocationFound = (coords: LatLng, name: string) => {
-    setSearchLocation({ coords, name });
   };
 
   const updateAnalysisStatus = (
@@ -272,7 +300,6 @@ function App(): React.ReactNode {
     <div className="flex h-screen w-screen bg-gray-100">
       {/* Side Panel */}
       <SidePanel
-        onLocationFound={handleLocationFound}
         paddingMeters={paddingMeters}
         onPaddingMetersChange={setPaddingMeters}
         geoJsonFileName={geoJsonFileName}
@@ -280,7 +307,6 @@ function App(): React.ReactNode {
         zoneError={zoneError}
         onGeoJsonFileSelected={handleGeoJsonFileSelected}
         onClearZone={handleClearZone}
-        onDownloadZone={handleDownloadZone}
         analysisOptions={ANALYSIS_OPTIONS}
         selectedAnalyses={selectedAnalyses}
         onSelectedAnalysesChange={setSelectedAnalyses}
@@ -291,10 +317,10 @@ function App(): React.ReactNode {
       {/* Main Map Area */}
       <div className="flex-1 relative bg-gray-200">
         <MapComponent
-          searchLocation={searchLocation}
           zoneGeoJsonWgs84={zone?.geoJsonWgs84 ?? null}
           paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
           analysisResults={analysisResults}
+          zoneStats={zone?.stats ?? null}
         />
       </div>
     </div>
