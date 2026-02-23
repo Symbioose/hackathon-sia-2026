@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
-import xml.etree.ElementTree as ET
 from zipfile import BadZipFile, ZipFile
 
 import requests
@@ -18,15 +17,9 @@ except ModuleNotFoundError:
     from mtn import get_emprise
 
 
+RPG_DEFAULT_LAYER = "RPG.LATEST:parcelles_graphiques"
+RPG_DEFAULT_WFS_URL = "https://data.geopf.fr/wfs/ows"
 HTTP_CONNECT_TIMEOUT = 10
-DEFAULT_SANDRE_WFS = "https://services.sandre.eaufrance.fr/geo/topage2024"
-DEFAULT_GEOPF_WFS = "https://data.geopf.fr/wfs/ows"
-
-# CORRECTION : On met les vraies couches Topage ici (et non BDTOPO)
-BDTOPAGE_DEFAULT_LAYERS = [
-    "TronconHydrographique_FXX_Topage2024",
-    "SurfaceHydrographique_FXX_Topage2024",
-]
 
 
 def _build_http_session() -> requests.Session:
@@ -50,26 +43,18 @@ def _build_http_session() -> requests.Session:
 HTTP_SESSION = _build_http_session()
 
 
-def _get_default_service_url(layer_name: str) -> str:
-    if layer_name.upper().startswith("BDTOPO_V3:"):
-        return DEFAULT_GEOPF_WFS
-    return DEFAULT_SANDRE_WFS
-
-
-
-def fetch_bdtopage_shapefile_by_emprise(
+def fetch_rpg_shapefile_by_emprise(
     input_path: str | Path,
-    layer_name: str = "TronconHydrographique_FXX_Topage2024",
+    layer_name: str = RPG_DEFAULT_LAYER,
     buffer: int = 0,
-    service_url: str | None = None,
+    service_url: str = RPG_DEFAULT_WFS_URL,
     srs: str = "EPSG:2154",
-    output_dir: str | Path = "bdtopage_shp",
+    output_dir: str | Path = "rpg_shp",
     timeout: int = 60,
 ) -> Path:
     """
-    Récupère un Shapefile (zip) BD Topage sur l'emprise du GeoJSON, puis l'extrait.
+    Telecharge la couche RPG en Shapefile (zip) sur l'emprise du GeoJSON.
     """
-    selected_service_url = service_url or _get_default_service_url(layer_name)
     bbox = get_emprise(input_path, buffer=buffer)
     minx, miny, maxx, maxy = bbox["xmin"], bbox["ymin"], bbox["xmax"], bbox["ymax"]
 
@@ -86,7 +71,7 @@ def fetch_bdtopage_shapefile_by_emprise(
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f"{layer_name.replace(':', '_')}.zip"
 
-    declared_formats = _get_wfs_output_formats(service_url=selected_service_url, timeout=timeout)
+    declared_formats = _get_wfs_output_formats(service_url=service_url, timeout=timeout)
     preferred_shape_like = [
         fmt for fmt in declared_formats if any(k in fmt.lower() for k in ("shape", "shp", "zip"))
     ]
@@ -100,7 +85,7 @@ def fetch_bdtopage_shapefile_by_emprise(
         params = {**base_params, "OUTPUTFORMAT": output_format}
         try:
             with HTTP_SESSION.get(
-                selected_service_url,
+                service_url,
                 params=params,
                 timeout=(HTTP_CONNECT_TIMEOUT, timeout),
             ) as response:
@@ -133,56 +118,7 @@ def fetch_bdtopage_shapefile_by_emprise(
         last_error = f"Aucun .shp trouve apres extraction de {zip_path}"
         zip_path.unlink(missing_ok=True)
 
-    # Si on arrive ici, tous les formats ont échoué. On affiche la vraie erreur du Sandre !
-    raise RuntimeError(f"Echec WFS SHP pour {layer_name}. Dernière erreur Sandre :\n{last_error[:500]}")
-
-
-def fetch_bdtopage_layers_shapefiles_by_emprise(
-    input_path: str | Path,
-    layer_names: list[str] | None = None,
-    buffer: int = 0,
-    output_dir: str | Path = "bdtopage_shp",
-    service_url: str | None = None,
-    srs: str = "EPSG:2154",
-    timeout: int = 60,
-) -> dict[str, Any]:
-    """
-    Telecharge plusieurs couches hydro en Shapefile et retourne un rapport.
-    """
-    layers = layer_names or BDTOPAGE_DEFAULT_LAYERS
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    downloaded: dict[str, Any] = {}
-    skipped: dict[str, Any] = {}
-
-    for layer_name in layers:
-        layer_dir = out_dir / layer_name.replace(":", "_")
-        layer_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            shp_path = fetch_bdtopage_shapefile_by_emprise(
-                input_path=input_path,
-                layer_name=layer_name,
-                buffer=buffer,
-                service_url=service_url,
-                srs=srs,
-                output_dir=layer_dir,
-                timeout=timeout,
-            )
-            downloaded[layer_name] = {"shp_path": str(shp_path)}
-        except Exception as exc:
-            skipped[layer_name] = {"reason": str(exc)}
-
-    return {"layers": downloaded, "skipped": skipped}
-
-
-# Compat: on garde les anciens noms appeles dans ton terminal.
-def fetch_bdtopage_geopackage_by_emprise(*args, **kwargs):  # type: ignore[no-untyped-def]
-    return fetch_bdtopage_shapefile_by_emprise(*args, **kwargs)
-
-
-def fetch_bdtopage_layers_geopackages_by_emprise(*args, **kwargs):  # type: ignore[no-untyped-def]
-    return fetch_bdtopage_layers_shapefiles_by_emprise(*args, **kwargs)
+    raise RuntimeError(f"Echec WFS SHP pour {layer_name}. Derniere erreur: {last_error[:500]}")
 
 
 def _get_wfs_output_formats(service_url: str, timeout: int = 30) -> list[str]:
@@ -212,12 +148,13 @@ def _get_wfs_output_formats(service_url: str, timeout: int = 30) -> list[str]:
                 values.append(text)
 
     uniq: list[str] = []
-    seen = set()
-    for v in values:
-        key = v.lower()
-        if key not in seen:
-            seen.add(key)
-            uniq.append(v)
+    seen: set[str] = set()
+    for value in values:
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(value)
     return uniq
 
 
@@ -236,3 +173,7 @@ def _safe_extract_zip(zip_path: Path, out_dir: Path) -> list[Path]:
             return extracted
     except BadZipFile as exc:
         raise RuntimeError(f"ZIP corrompu: {zip_path}") from exc
+
+
+def fetch_rpg_geopackage_by_emprise(*args: Any, **kwargs: Any) -> Path:
+    return fetch_rpg_shapefile_by_emprise(*args, **kwargs)

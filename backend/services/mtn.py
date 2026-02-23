@@ -3,7 +3,37 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
+
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+HTTP_CONNECT_TIMEOUT = 10
+HTTP_READ_TIMEOUT = 180
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+def _build_http_session() -> requests.Session:
+    retry = Retry(
+        total=5,
+        connect=5,
+        read=5,
+        status=5,
+        backoff_factor=0.7,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+HTTP_SESSION = _build_http_session()
 
 def _iter_points(coords):
     """Parcourt récursivement coordinates et yield (x, y)."""
@@ -37,6 +67,23 @@ def _iter_geometries(payload):
         yield payload
 
 
+def _validate_epsg_2154(payload: dict[str, Any]) -> None:
+    """
+    Verifie que le CRS est EPSG:2154 quand l'info CRS est presente.
+    """
+    crs_obj = payload.get("crs")
+    if not isinstance(crs_obj, dict):
+        return
+
+    props = crs_obj.get("properties")
+    if not isinstance(props, dict):
+        return
+
+    name = str(props.get("name", "")).strip()
+    if name and "2154" not in name:
+        raise ValueError(f"CRS non supporte: {name}. Attendu EPSG:2154.")
+
+
 def get_emprise(input_path: str | Path, buffer: int = 0) -> dict[str, float]:
     """
     Fonction API: retourne l'emprise globale d'un GeoJSON.
@@ -51,6 +98,10 @@ def get_emprise(input_path: str | Path, buffer: int = 0) -> dict[str, float]:
     path = Path(input_path)
     with path.open("r", encoding="utf-8") as f:
         payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError("Le fichier doit contenir un objet GeoJSON.")
+
+    _validate_epsg_2154(payload)
 
     minx = miny = maxx = maxy = None
 
@@ -104,8 +155,8 @@ def telecharger_tif_lambert(xmin, ymin, xmax, ymax, fichier_sortie="mnt_final.ti
     et télécharge directement le fichier TIF de l'IGN.
     """
     # 1. On calcule la taille de l'image (1 pixel = 1 mètre)
-    largeur = int(xmax - xmin)
-    hauteur = int(ymax - ymin)
+    largeur = max(1, int(round(xmax - xmin)))
+    hauteur = max(1, int(round(ymax - ymin)))
     
     print(f"📏 Zone demandée : {largeur}m x {hauteur}m")
     
@@ -126,18 +177,29 @@ def telecharger_tif_lambert(xmin, ymin, xmax, ymax, fichier_sortie="mnt_final.ti
 
     # 3. On télécharge
     print("📡 Requête envoyée à l'IGN...")
-    reponse = requests.get(url, params=params)
+    output_path = Path(fichier_sortie)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if reponse.status_code == 200:
-        if "xml" in reponse.headers.get("Content-Type", ""):
-            print("❌ Erreur de l'API IGN :", reponse.text)
-        else:
-            with open(fichier_sortie, 'wb') as f:
-                f.write(reponse.content)
-            taille_mo = len(reponse.content) / (1024 * 1024)
-            print(f"✅ SUCCÈS ! Fichier {fichier_sortie} récupéré ({taille_mo:.2f} Mo).")
-    else:
-        print(f"❌ Erreur HTTP {reponse.status_code} : {reponse.text}")
+    with HTTP_SESSION.get(
+        url,
+        params=params,
+        timeout=(HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT),
+        stream=True,
+    ) as reponse:
+        if reponse.status_code != 200:
+            raise RuntimeError(f"Erreur HTTP {reponse.status_code} : {reponse.text}")
+
+        if "xml" in reponse.headers.get("Content-Type", "").lower():
+            raise RuntimeError(f"Erreur de l'API IGN : {reponse.text}")
+
+        with output_path.open("wb") as f:
+            for chunk in reponse.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                if chunk:
+                    f.write(chunk)
+
+    taille_mo = output_path.stat().st_size / (1024 * 1024)
+    print(f"✅ SUCCÈS ! Fichier {fichier_sortie} récupéré ({taille_mo:.2f} Mo).")
+    return str(output_path)
 
 # --- TEST AVEC LES COORDONNÉES DE TON GEOJSON ---
 if __name__ == "__main__":
