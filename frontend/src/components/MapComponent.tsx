@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -7,15 +7,16 @@ import {
   Rectangle,
   useMap,
   GeoJSON,
+  ImageOverlay,
 } from 'react-leaflet';
 import L from 'leaflet';
-import { GeoJsonFeatureCollection, LatLng, MapType, Wgs84Bounds } from '../types';
+import { AnalysisResult, AnalysisType, GeoJsonFeatureCollection, LatLng, Wgs84Bounds } from '../types';
 
 interface MapComponentProps {
-  mapType: MapType;
   searchLocation: { coords: LatLng; name: string } | null;
   zoneGeoJsonWgs84: GeoJsonFeatureCollection | null;
   paddedBoundsWgs84: Wgs84Bounds | null;
+  analysisResults: Record<AnalysisType, AnalysisResult>;
 }
 
 // Component to handle map movements
@@ -84,40 +85,19 @@ const ZoneLayers: React.FC<ZoneLayersProps> = ({
   );
 };
 
-// Map tile configurations
-const TILE_CONFIGS: Record<
-  MapType,
-  { url: string; attribution: string; maxZoom: number }
-> = {
-  osm: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
-  },
-  satellite: {
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'USGS',
-    maxZoom: 16,
-  },
-  terrain: {
-    url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution:
-      '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
-    maxZoom: 17,
-  },
+const SATELLITE_TILE = {
+  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  attribution:
+    '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> | Tiles &copy; <a href="https://www.esri.com/">Esri</a>',
+  maxZoom: 18,
 };
 
 export const MapComponent: React.FC<MapComponentProps> = ({
-  mapType,
   searchLocation,
   zoneGeoJsonWgs84,
   paddedBoundsWgs84,
+  analysisResults,
 }) => {
-  const mapRef = useRef<L.Map | null>(null);
-
-  const tileConfig = TILE_CONFIGS[mapType];
-
   const searchMarkerIcon = new L.Icon({
     iconUrl:
       'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
@@ -134,13 +114,11 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       center={[48.8566, 2.3522]} // Paris as default
       zoom={6}
       style={{ height: '100%', width: '100%' }}
-      ref={mapRef}
     >
       <TileLayer
-        key={mapType}
-        url={tileConfig.url}
-        attribution={tileConfig.attribution}
-        maxZoom={tileConfig.maxZoom}
+        url={SATELLITE_TILE.url}
+        attribution={SATELLITE_TILE.attribution}
+        maxZoom={SATELLITE_TILE.maxZoom}
       />
 
       <SearchLocationHandler location={searchLocation} />
@@ -149,6 +127,21 @@ export const MapComponent: React.FC<MapComponentProps> = ({
         zoneGeoJsonWgs84={zoneGeoJsonWgs84}
         paddedBoundsWgs84={paddedBoundsWgs84}
       />
+
+      {paddedBoundsWgs84 &&
+        Object.values(analysisResults)
+          .filter((item) => item.status === 'success' && item.url)
+          .map((item) => (
+            <ImageOverlay
+              key={item.type}
+              url={item.url as string}
+              bounds={[
+                [paddedBoundsWgs84.southWest.lat, paddedBoundsWgs84.southWest.lng],
+                [paddedBoundsWgs84.northEast.lat, paddedBoundsWgs84.northEast.lng],
+              ]}
+              opacity={0.7}
+            />
+          ))}
 
       {/* Search result marker */}
       {searchLocation && (

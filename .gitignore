@@ -221,5 +221,7 @@ __marimo__/
 *.tif
 *.DS_Store
 
-#vite
+# frontend
 .vite
+node_modules/
+
