@@ -11,6 +11,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 
 
+from dotenv import load_dotenv
+
 from services.bdtopage import BDTOPAGE_DEFAULT_LAYERS, fetch_bdtopage_layers_shapefiles_by_emprise
 from services.bdtopo import (
     BDTOPO_OCCUPATION_LAYERS,
@@ -38,6 +40,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+load_dotenv()  
 
 
 @app.get("/health")
@@ -267,12 +270,29 @@ def rpg_download(
 
 
 @app.post("/marianne/rainfall/monthly-average")
-def marianne_rainfall_monthly_average(
+def marianne_rainfall_monthly_average_only(
     zone_file: UploadFile = File(...),
     code_departement: str | None = Form(None),
     station_id: str | None = Form(None),
     end_year: int | None = Form(None),
     api_key: str | None = Form(None),
+) -> dict:
+    result = _compute_marianne_monthly_average(
+        zone_file=zone_file,
+        code_departement=code_departement,
+        station_id=station_id,
+        end_year=end_year,
+        api_key=api_key,
+    )
+    return {"monthly_average_mm": result.get("monthly_average_mm", {})}
+
+
+def _compute_marianne_monthly_average(
+    zone_file: UploadFile,
+    code_departement: str | None,
+    station_id: str | None,
+    end_year: int | None,
+    api_key: str | None,
 ) -> dict:
     zone_path = _save_upload(zone_file)
     try:
