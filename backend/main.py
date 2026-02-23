@@ -7,6 +7,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+
 
 from services.bdtopage import BDTOPAGE_DEFAULT_LAYERS, fetch_bdtopage_layers_shapefiles_by_emprise
 from services.bdtopo import (
@@ -27,6 +30,18 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Geo Services API", version="1.0.0")
 app.mount("/files", StaticFiles(directory=str(OUTPUTS_DIR)), name="files")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(
+    TrustedHostMiddleware, allowed_hosts=["localhost:5173"]
+)
 
 
 @app.get("/health")
