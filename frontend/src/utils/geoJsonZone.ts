@@ -8,7 +8,7 @@ import {
   Lambert93Bbox,
   LatLng,
   ZoneCrs,
-  ZonePaddingMeters,
+  ZonePadding,
   ZoneStats,
 } from '../types';
 import { lambert93ToWgs84, wgs84ToLambert93 } from './coordinateTransform';
@@ -30,10 +30,9 @@ function clampFiniteNumber(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function normalizePadding(padding: ZonePaddingMeters): ZonePaddingMeters {
+function normalizePadding(padding: ZonePadding): ZonePadding {
   return {
-    padX: clampFiniteNumber(padding.padX, 0),
-    padY: clampFiniteNumber(padding.padY, 0),
+    buffer: clampFiniteNumber(padding.buffer, 0),
   };
 }
 
@@ -331,7 +330,7 @@ function computeAreaAndPerimeterLambert93(
 
 export function buildZoneFromGeoJson(
   rawGeoJson: unknown,
-  paddingMeters: ZonePaddingMeters
+  paddingMeters: ZonePadding
 ): { geoJsonWgs84: GeoJsonFeatureCollection; stats: ZoneStats } {
   const padding = normalizePadding(paddingMeters);
   const featureCollection = normalizeToFeatureCollection(rawGeoJson);
@@ -351,10 +350,10 @@ export function buildZoneFromGeoJson(
   const bboxLambert93 = computeBboxLambert93FromFeatureCollection(featureCollection, crsDetected);
 
   const bboxLambert93Padded: Lambert93Bbox = {
-    minX: Math.round((bboxLambert93.minX - padding.padX) * 100) / 100,
-    minY: Math.round((bboxLambert93.minY - padding.padY) * 100) / 100,
-    maxX: Math.round((bboxLambert93.maxX + padding.padX) * 100) / 100,
-    maxY: Math.round((bboxLambert93.maxY + padding.padY) * 100) / 100,
+    minX: Math.round((bboxLambert93.minX - padding.buffer) * 100) / 100,
+    minY: Math.round((bboxLambert93.minY - padding.buffer) * 100) / 100,
+    maxX: Math.round((bboxLambert93.maxX + padding.buffer) * 100) / 100,
+    maxY: Math.round((bboxLambert93.maxY + padding.buffer) * 100) / 100,
   };
 
   const southWest: LatLng = lambert93ToWgs84(bboxLambert93Padded.minX, bboxLambert93Padded.minY);

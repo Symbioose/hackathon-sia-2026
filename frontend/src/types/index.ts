@@ -74,9 +74,8 @@ export interface GeoJsonFeatureCollection<P = Record<string, unknown>> {
 
 export type ZoneCrs = 'EPSG:4326' | 'EPSG:2154';
 
-export interface ZonePaddingMeters {
-  padX: number;
-  padY: number;
+export interface ZonePadding {
+  buffer: number;
 }
 
 export interface Lambert93Bbox {
@@ -93,7 +92,7 @@ export interface Wgs84Bounds {
 
 export interface ZoneStats {
   crsDetected: ZoneCrs;
-  paddingMeters: ZonePaddingMeters;
+  paddingMeters: ZonePadding;
   bboxLambert93: Lambert93Bbox;
   bboxLambert93Padded: Lambert93Bbox;
   bboxWgs84Padded: Wgs84Bounds;
@@ -101,4 +100,21 @@ export interface ZoneStats {
   areaHa: number;
   perimeterM: number;
   perimeterKm: number;
+}
+
+export type AnalysisType =
+  | 'mnt'
+  | 'axe_ruissellement'
+  | 'occupation_sols'
+  | 'culture'
+  | 'bassin_versant';
+
+export type AnalysisStatus = 'idle' | 'pending' | 'success' | 'error';
+
+export interface AnalysisResult {
+  type: AnalysisType;
+  label: string;
+  status: AnalysisStatus;
+  url?: string;
+  error?: string;
 }

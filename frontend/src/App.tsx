@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AnalysisResult,
+  AnalysisStatus,
+  AnalysisType,
   GeoJsonFeatureCollection,
   LatLng,
-  MapType,
-  ZonePaddingMeters,
+  ZonePadding,
   ZoneStats,
 } from './types';
 import { MapComponent } from './components/MapComponent';
@@ -18,15 +20,37 @@ import './App.css';
 function App(): React.ReactNode {
   type RawGeoJson = Record<string, unknown>;
 
-  const [mapType, setMapType] = useState<MapType>('osm');
+  const BASE_API = 'http://localhost:8000';
+
+  // API configuration for each analysis type
+  interface ApiConfig {
+    endpoint: string;
+    layerParam?: string;
+  }
+
+  const ANALYSIS_API_CONFIG: Record<AnalysisType, ApiConfig> = {
+    mnt: { endpoint: '/mtn/download' },
+    axe_ruissellement: { endpoint: '/bdtopage/download', layerParam: 'BDTOPO_V3:troncon_hydrographique' },
+    occupation_sols: { endpoint: '/bdtopo/download', layerParam: 'BDTOPO_V3:batiment,BDTOPO_V3:cimetiere,BDTOPO_V3:haie,BDTOPO_V3:surface_hydrographique,BDTOPO_V3:terrain_de_sport,BDTOPO_V3:troncon_de_route,BDTOPO_V3:zone_de_vegetation' },
+    culture: { endpoint: '/rpg/download', layerParam: 'RPG.LATEST:parcelles_graphiques' },
+    bassin_versant: { endpoint: '/bdtopage/download', layerParam: 'BDTOPO_V3:bassin_versant_topographique' },
+  };
+
+  const ANALYSIS_OPTIONS: Array<{ type: AnalysisType; label: string }> = [
+    { type: 'mnt', label: 'MNT' },
+    { type: 'axe_ruissellement', label: 'Axe de ruissellement' },
+    { type: 'occupation_sols', label: 'Occupation des sols' },
+    { type: 'culture', label: 'Culture' },
+    { type: 'bassin_versant', label: 'Bassin versant' },
+  ];
+
   const [searchLocation, setSearchLocation] = useState<{
     coords: LatLng;
     name: string;
   } | null>(null);
 
-  const [paddingMeters, setPaddingMeters] = useState<ZonePaddingMeters>({
-    padX: 0,
-    padY: 0,
+  const [paddingMeters, setPaddingMeters] = useState<ZonePadding>({
+    buffer: 0,
   });
 
   const [rawGeoJson, setRawGeoJson] = useState<RawGeoJson | null>(null);
@@ -36,6 +60,38 @@ function App(): React.ReactNode {
   const [zone, setZone] = useState<
     { geoJsonWgs84: GeoJsonFeatureCollection; stats: ZoneStats } | null
   >(null);
+
+  const [selectedAnalyses, setSelectedAnalyses] = useState<
+    Record<AnalysisType, boolean>
+  >({
+    mnt: false,
+    axe_ruissellement: false,
+    occupation_sols: false,
+    culture: false,
+    bassin_versant: false,
+  });
+
+  const [analysisResults, setAnalysisResults] = useState<
+    Record<AnalysisType, AnalysisResult>
+  >({
+    mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
+    axe_ruissellement: {
+      type: 'axe_ruissellement',
+      label: 'Axe de ruissellement',
+      status: 'idle',
+    },
+    occupation_sols: {
+      type: 'occupation_sols',
+      label: 'Occupation des sols',
+      status: 'idle',
+    },
+    culture: { type: 'culture', label: 'Culture', status: 'idle' },
+    bassin_versant: {
+      type: 'bassin_versant',
+      label: 'Bassin versant',
+      status: 'idle',
+    },
+  });
 
   useEffect(() => {
     const getErrorMessage = (err: unknown): string => {
@@ -66,6 +122,13 @@ function App(): React.ReactNode {
     setGeoJsonFileName(null);
     setZoneError(null);
     setZone(null);
+    setAnalysisResults((prev) => {
+      const reset: Record<AnalysisType, AnalysisResult> = { ...prev };
+      ANALYSIS_OPTIONS.forEach((opt) => {
+        reset[opt.type] = { type: opt.type, label: opt.label, status: 'idle' };
+      });
+      return reset;
+    });
   };
 
   const handleGeoJsonFileSelected = async (file: File) => {
@@ -107,12 +170,108 @@ function App(): React.ReactNode {
     setSearchLocation({ coords, name });
   };
 
+  const updateAnalysisStatus = (
+    type: AnalysisType,
+    status: AnalysisStatus,
+    data?: { url?: string; error?: string }
+  ) => {
+    setAnalysisResults((prev) => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        status,
+        url: data?.url,
+        error: data?.error,
+      },
+    }));
+  };
+
+  const runSelectedAnalyses = async () => {
+    if (!zone) return;
+
+    const selected = ANALYSIS_OPTIONS.filter((opt) => selectedAnalyses[opt.type]);
+    if (selected.length === 0) return;
+
+    // GeoJSON content as string for multiple requests
+    const zoneJsonString = JSON.stringify(zone.geoJsonWgs84);
+
+    await Promise.all(
+      selected.map(async (opt) => {
+        updateAnalysisStatus(opt.type, 'pending');
+        try {
+          const config = ANALYSIS_API_CONFIG[opt.type];
+          const formData = new FormData();
+
+          // Create fresh blob for each request
+          const zoneFileBlob = new Blob([zoneJsonString], {
+            type: 'application/geo+json',
+          });
+
+          // Append zone file
+          formData.append('zone_file', zoneFileBlob, 'zone.geojson');
+
+          // Append buffer (will be converted to int by FastAPI)
+          const bufferValue = Math.round(paddingMeters.buffer);
+          formData.append('buffer', bufferValue.toString());
+
+          // Append layer parameters if specified
+          if (config.layerParam) {
+            if (opt.type === 'culture') {
+              formData.append('layer_name', config.layerParam);
+            } else {
+              formData.append('layer_names', config.layerParam);
+            }
+          }
+
+          const response = await fetch(`${BASE_API}${config.endpoint}`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+              `HTTP ${response.status}: ${errorText || 'Bad request'}`
+            );
+          }
+
+          const data = (await response.json()) as Record<string, unknown>;
+
+          // Extract download URL based on response structure
+          let url: string | undefined;
+
+          if (typeof data.download_url === 'string') {
+            // Direct download_url (MNT, RPG)
+            url = data.download_url;
+          } else if (data.layers && typeof data.layers === 'object') {
+            // Multiple layers response (BDTOPAGE, BDTOPO)
+            // Get the first layer's download_url
+            const layers = data.layers as Record<string, unknown>;
+            const firstLayer = Object.values(layers)[0] as
+              | Record<string, unknown>
+              | undefined;
+            if (firstLayer && typeof firstLayer.download_url === 'string') {
+              url = firstLayer.download_url;
+            }
+          }
+
+          if (!url) {
+            throw new Error('Missing URL in response');
+          }
+
+          updateAnalysisStatus(opt.type, 'success', { url });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Request failed';
+          updateAnalysisStatus(opt.type, 'error', { error: message });
+        }
+      })
+    );
+  };
+
   return (
     <div className="flex h-screen w-screen bg-gray-100">
       {/* Side Panel */}
       <SidePanel
-        mapType={mapType}
-        onMapTypeChange={setMapType}
         onLocationFound={handleLocationFound}
         paddingMeters={paddingMeters}
         onPaddingMetersChange={setPaddingMeters}
@@ -122,15 +281,20 @@ function App(): React.ReactNode {
         onGeoJsonFileSelected={handleGeoJsonFileSelected}
         onClearZone={handleClearZone}
         onDownloadZone={handleDownloadZone}
+        analysisOptions={ANALYSIS_OPTIONS}
+        selectedAnalyses={selectedAnalyses}
+        onSelectedAnalysesChange={setSelectedAnalyses}
+        analysisResults={analysisResults}
+        onRunSelectedAnalyses={runSelectedAnalyses}
       />
 
       {/* Main Map Area */}
       <div className="flex-1 relative bg-gray-200">
         <MapComponent
-          mapType={mapType}
           searchLocation={searchLocation}
           zoneGeoJsonWgs84={zone?.geoJsonWgs84 ?? null}
           paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
+          analysisResults={analysisResults}
         />
       </div>
     </div>

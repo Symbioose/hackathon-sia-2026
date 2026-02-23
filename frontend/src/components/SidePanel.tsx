@@ -1,14 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { LatLng, MapType, MapTypeOption, ZonePaddingMeters, ZoneStats } from '../types';
+import React, { useRef } from 'react';
+import {
+  AnalysisResult,
+  AnalysisType,
+  LatLng,
+  ZonePadding,
+  ZoneStats,
+} from '../types';
 import { SearchBar } from './SearchBar';
 
 interface SidePanelProps {
-  mapType: MapType;
-  onMapTypeChange: (mapType: MapType) => void;
   onLocationFound: (coords: LatLng, name: string) => void;
 
-  paddingMeters: ZonePaddingMeters;
-  onPaddingMetersChange: (padding: ZonePaddingMeters) => void;
+  paddingMeters: ZonePadding;
+  onPaddingMetersChange: (padding: ZonePadding) => void;
 
   geoJsonFileName: string | null;
   zoneStats: ZoneStats | null;
@@ -16,34 +20,15 @@ interface SidePanelProps {
   onGeoJsonFileSelected: (file: File) => void;
   onClearZone: () => void;
   onDownloadZone: () => void;
+
+  analysisOptions: Array<{ type: AnalysisType; label: string }>;
+  selectedAnalyses: Record<AnalysisType, boolean>;
+  onSelectedAnalysesChange: (next: Record<AnalysisType, boolean>) => void;
+  analysisResults: Record<AnalysisType, AnalysisResult>;
+  onRunSelectedAnalyses: () => void;
 }
 
-const MAP_TYPES: MapTypeOption[] = [
-  {
-    value: 'osm',
-    label: 'OpenStreetMap',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  },
-  {
-    value: 'satellite',
-    label: 'Satellite (USGS)',
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'USGS',
-  },
-  {
-    value: 'terrain',
-    label: 'Terrain',
-    url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution:
-      '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
-  },
-];
-
 export const SidePanel: React.FC<SidePanelProps> = ({
-  mapType,
-  onMapTypeChange,
   onLocationFound,
   paddingMeters,
   onPaddingMetersChange,
@@ -53,18 +38,13 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   onGeoJsonFileSelected,
   onClearZone,
   onDownloadZone,
+  analysisOptions,
+  selectedAnalyses,
+  onSelectedAnalysesChange,
+  analysisResults,
+  onRunSelectedAnalyses,
 }) => {
-  const [selectedType, setSelectedType] = useState<MapType>(mapType);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    setSelectedType(mapType);
-  }, [mapType]);
-
-  const handleMapTypeChange = (value: MapType) => {
-    setSelectedType(value);
-    onMapTypeChange(value);
-  };
 
   const openFilePicker = () => {
     fileInputRef.current?.click();
@@ -79,6 +59,20 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   };
 
   const formatNumber = (n: number) => n.toLocaleString('fr-FR');
+
+  const selectedCount = analysisOptions.filter((opt) => selectedAnalyses[opt.type]).length;
+  const progressItems = analysisOptions.filter((opt) => selectedAnalyses[opt.type]);
+  const doneCount = progressItems.filter(
+    (opt) => analysisResults[opt.type].status === 'success'
+  ).length;
+  const errorCount = progressItems.filter(
+    (opt) => analysisResults[opt.type].status === 'error'
+  ).length;
+  const progressTotal = progressItems.length;
+  let progressPercent = 0;
+  if (progressTotal > 0) {
+    progressPercent = Math.round((doneCount + errorCount) / progressTotal * 100);
+  }
 
   return (
     <div className="w-80 bg-white shadow-lg flex flex-col h-full">
@@ -96,36 +90,18 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           </h2>
 
           {/* Padding controls */}
-          <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="mb-3">
             <div>
-              <label htmlFor="paddingX" className="block text-xs text-gray-600">
-                Padding X (m)
+              <label htmlFor="padding" className="block text-xs text-gray-600">
+                Padding (m)
               </label>
               <input
-                id="paddingX"
+                id="padding"
                 type="number"
-                value={paddingMeters.padX}
+                value={paddingMeters.buffer}
                 onChange={(e) =>
                   onPaddingMetersChange({
-                    ...paddingMeters,
-                    padX: Number(e.target.value),
-                  })
-                }
-                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="paddingY" className="block text-xs text-gray-600">
-                Padding Y (m)
-              </label>
-              <input
-                id="paddingY"
-                type="number"
-                value={paddingMeters.padY}
-                onChange={(e) =>
-                  onPaddingMetersChange({
-                    ...paddingMeters,
-                    padY: Number(e.target.value),
+                    buffer: Number(e.target.value),
                   })
                 }
                 className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -207,6 +183,78 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           )}
         </div>
 
+        {/* Analysis Selection & Progress */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 mb-2 uppercase">
+            Analyses
+          </h2>
+          <div className="space-y-2">
+            {analysisOptions.map((opt) => (
+              <label
+                key={opt.type}
+                className="flex items-center gap-2 text-sm text-gray-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedAnalyses[opt.type]}
+                  onChange={(e) =>
+                    onSelectedAnalysesChange({
+                      ...selectedAnalyses,
+                      [opt.type]: e.target.checked,
+                    })
+                  }
+                  className="h-4 w-4 text-blue-600"
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+
+          <button
+            onClick={onRunSelectedAnalyses}
+            disabled={selectedCount === 0 || !zoneStats}
+            className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded font-medium text-sm hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Run Selected ({selectedCount})
+          </button>
+
+          <div className="mt-3">
+            <div className="flex justify-between text-xs text-gray-600 mb-1">
+              <span>Progress</span>
+              <span>{progressPercent}%</span>
+            </div>
+            <div className="h-2 bg-gray-200 rounded">
+              <div
+                className="h-2 bg-blue-600 rounded"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {progressItems.map((opt) => {
+              const item = analysisResults[opt.type];
+              const statusLabelMap: Record<typeof item.status, string> = {
+                idle: 'Idle',
+                pending: 'En cours',
+                success: 'Terminé',
+                error: 'Erreur',
+              };
+              const statusLabel = statusLabelMap[item.status];
+
+              return (
+                <div
+                  key={opt.type}
+                  className="text-xs text-gray-700 flex items-center justify-between"
+                >
+                  <span>{item.label}</span>
+                  <span className="text-gray-500">{statusLabel}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Search Section */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-2 uppercase">
@@ -218,35 +266,6 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           </p>
         </div>
 
-        {/* Map Type Selection */}
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-3 uppercase">
-            Map Type
-          </h2>
-          <div className="space-y-2">
-            {MAP_TYPES.map((mapTypeOpt) => (
-              <label
-                key={mapTypeOpt.value}
-                className="flex items-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition"
-              >
-                <input
-                  type="radio"
-                  name="mapType"
-                  value={mapTypeOpt.value}
-                  checked={selectedType === mapTypeOpt.value}
-                  onChange={(e) =>
-                    handleMapTypeChange(e.target.value as MapType)
-                  }
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="ml-2 text-sm font-medium text-gray-700">
-                  {mapTypeOpt.label}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
         {/* Instructions */}
         <div className="bg-blue-50 border-l-4 border-blue-400 p-3">
           <h3 className="text-sm font-semibold text-blue-900 mb-2">
@@ -254,9 +273,9 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           </h3>
           <ol className="text-xs text-blue-800 space-y-1">
             <li>1. Import a GeoJSON file (Polygon/MultiPolygon)</li>
-            <li>2. Adjust padding X/Y (meters in Lambert-93)</li>
-            <li>3. The padded rectangle is shown on the map</li>
-            <li>4. Download GeoJSON normalized to WGS84 with properties.stats</li>
+            <li>2. Adjust padding (meters in Lambert-93)</li>
+            <li>3. Select analyses and run the requests</li>
+            <li>4. The padded rectangle and raster layers are shown on the map</li>
           </ol>
         </div>
       </div>
