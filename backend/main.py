@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from uuid import uuid4
@@ -13,6 +14,7 @@ from services.bdtopo import (
     CODE_LU_DEFAULT,
     fetch_bdtopo_occupation_layers_shapefiles,
 )
+from services.marianne import fetch_monthly_rainfall_average_last_ten_years_from_geojson
 from services.mtn import get_emprise, telecharger_tif_lambert
 from services.rpg import RPG_DEFAULT_LAYER, fetch_rpg_shapefile_by_emprise
 
@@ -251,3 +253,38 @@ def rpg_download(
         "zip_path": str(zip_path),
         "download_url": f"/files/rpg/{run_id}/{Path(shp_path).parent.name}/{Path(zip_path).name}",
     }
+
+
+@app.post("/marianne/rainfall/monthly-average")
+def marianne_rainfall_monthly_average(
+    zone_file: UploadFile = File(...),
+    code_departement: str | None = Form(None),
+    station_id: str | None = Form(None),
+    end_year: int | None = Form(None),
+    api_key: str | None = Form(None),
+) -> dict:
+    zone_path = _save_upload(zone_file)
+    try:
+        result = fetch_monthly_rainfall_average_last_ten_years_from_geojson(
+            input_path=zone_path,
+            code_departement=code_departement,
+            station_id=station_id,
+            end_year=end_year,
+            api_key=api_key,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        _cleanup_upload(zone_file, zone_path)
+    return result
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+        reload=True,
+    )

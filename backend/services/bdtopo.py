@@ -14,8 +14,12 @@ try:
     # Cas standard: import depuis la racine du projet.
     from backend.services.mtn import get_emprise
 except ModuleNotFoundError:
-    # Cas local: execution depuis backend/services.
-    from mtn import get_emprise
+    try:
+        # Cas app locale: execution depuis backend.
+        from services.mtn import get_emprise
+    except ModuleNotFoundError:
+        # Cas script local: execution depuis backend/services.
+        from mtn import get_emprise
 
 HTTP_CONNECT_TIMEOUT = 10
 
