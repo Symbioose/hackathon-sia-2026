@@ -1,0 +1,12 @@
+[user]
+	name = David Eckert
+	email = aj1044158@tdf.hubtotal.net
+	signingkey = /Users/david.eckert/.ssh/id_ed25519.pub
+[commit]
+	gpgsign = true
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	allowedSignersFile = /Users/david.eckert/.config/git/allowed_signers
+[core]
+	autocrlf = input
