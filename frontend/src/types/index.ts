@@ -155,3 +155,39 @@ export interface VectorDisplayData {
 }
 
 export type AnalysisDisplayData = MntDisplayData | VectorDisplayData;
+
+// --- Scenario comparison types ---
+
+export type ScenarioRasterName =
+  | 'infiltration'
+  | 'interrill_erosion'
+  | 'rill_erosion'
+  | 'surface_runoff';
+
+export interface ScenarioParcelleStats {
+  id: string;
+  scenario1_sum: number;
+  scenario2_sum: number;
+  pct_change: number;
+}
+
+export interface ScenarioTotalStats {
+  scenario1_sum: number;
+  scenario2_sum: number;
+  pct_change: number;
+}
+
+export interface ScenarioRasterGroup {
+  label: string;
+  parcelles: ScenarioParcelleStats[];
+  total: ScenarioTotalStats;
+}
+
+export interface ScenarioComparisonResult {
+  rasters: Record<ScenarioRasterName, ScenarioRasterGroup>;
+  parcelle_ids: string[];
+  bounds_wgs84: { south: number; west: number; north: number; east: number };
+  diff_preview_urls: Record<ScenarioRasterName, string>;
+}
+
+export type ScenarioComparisonStatus = 'idle' | 'loading' | 'success' | 'error';

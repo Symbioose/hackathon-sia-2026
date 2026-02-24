@@ -10,6 +10,7 @@ import {
 } from './types';
 import { MapComponent } from './components/MapComponent';
 import { SidePanel } from './components/SidePanel';
+import { ScenarioPage } from './components/ScenarioPage';
 import {
   buildZoneFromGeoJson,
   GeoJsonZoneError,
@@ -120,6 +121,7 @@ function App(): React.ReactNode {
 
   const [displayLayers, setDisplayLayers] = useState<Record<string, AnalysisDisplayData>>({});
   const [displayLoading, setDisplayLoading] = useState<AnalysisType | null>(null);
+  const [currentPage, setCurrentPage] = useState<'analysis' | 'scenarios'>('analysis');
 
   // Save state to localStorage whenever key states change
   useEffect(() => {
@@ -374,35 +376,54 @@ function App(): React.ReactNode {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-gray-100">
-      {/* Side Panel */}
-      <SidePanel
-        paddingMeters={paddingMeters}
-        onPaddingMetersChange={setPaddingMeters}
-        geoJsonFileName={geoJsonFileName}
-        zoneStats={zone?.stats ?? null}
-        zoneError={zoneError}
-        onGeoJsonFileSelected={handleGeoJsonFileSelected}
-        onClearZone={handleClearZone}
-        analysisOptions={ANALYSIS_OPTIONS}
-        selectedAnalyses={selectedAnalyses}
-        onSelectedAnalysesChange={setSelectedAnalyses}
-        analysisResults={analysisResults}
-        onRunSelectedAnalyses={runSelectedAnalyses}
-        displayLayers={displayLayers}
-        displayLoading={displayLoading}
-        onToggleAnalysisDisplay={handleToggleAnalysisDisplay}
-      />
+    <div className="relative h-screen w-screen overflow-hidden">
+      {/* Sliding container */}
+      <div
+        className="flex h-full transition-transform duration-500 ease-in-out"
+        style={{
+          width: '200vw',
+          transform: currentPage === 'scenarios' ? 'translateX(-100vw)' : 'translateX(0)',
+        }}
+      >
+        {/* Page 1: Analysis */}
+        <div className="w-screen h-full flex bg-gray-100 flex-shrink-0">
+          <SidePanel
+            paddingMeters={paddingMeters}
+            onPaddingMetersChange={setPaddingMeters}
+            geoJsonFileName={geoJsonFileName}
+            zoneStats={zone?.stats ?? null}
+            zoneError={zoneError}
+            onGeoJsonFileSelected={handleGeoJsonFileSelected}
+            onClearZone={handleClearZone}
+            analysisOptions={ANALYSIS_OPTIONS}
+            selectedAnalyses={selectedAnalyses}
+            onSelectedAnalysesChange={setSelectedAnalyses}
+            analysisResults={analysisResults}
+            onRunSelectedAnalyses={runSelectedAnalyses}
+            displayLayers={displayLayers}
+            displayLoading={displayLoading}
+            onToggleAnalysisDisplay={handleToggleAnalysisDisplay}
+            onNavigateToScenarios={() => setCurrentPage('scenarios')}
+          />
+          <div className="flex-1 relative bg-gray-200">
+            <MapComponent
+              zoneGeoJsonWgs84={zone?.geoJsonWgs84 ?? null}
+              paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
+              analysisResults={analysisResults}
+              zoneStats={zone?.stats ?? null}
+              displayLayers={displayLayers}
+            />
+          </div>
+        </div>
 
-      {/* Main Map Area */}
-      <div className="flex-1 relative bg-gray-200">
-        <MapComponent
-          zoneGeoJsonWgs84={zone?.geoJsonWgs84 ?? null}
-          paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
-          analysisResults={analysisResults}
-          zoneStats={zone?.stats ?? null}
-          displayLayers={displayLayers}
-        />
+        {/* Page 2: Scenario Comparison */}
+        <div className="w-screen h-full flex-shrink-0">
+          <ScenarioPage
+            rawGeoJson={rawGeoJson}
+            zone={zone}
+            onBack={() => setCurrentPage('analysis')}
+          />
+        </div>
       </div>
     </div>
   );

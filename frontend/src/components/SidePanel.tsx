@@ -39,6 +39,8 @@ interface SidePanelProps {
   displayLayers: Record<string, AnalysisDisplayData>;
   displayLoading: AnalysisType | null;
   onToggleAnalysisDisplay: (type: AnalysisType) => void;
+
+  onNavigateToScenarios?: () => void;
 }
 
 export const SidePanel: React.FC<SidePanelProps> = ({
@@ -57,6 +59,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   displayLayers,
   displayLoading,
   onToggleAnalysisDisplay,
+  onNavigateToScenarios,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -327,6 +330,16 @@ export const SidePanel: React.FC<SidePanelProps> = ({
               className="mt-3 w-full px-3 py-2 bg-green-600 text-white rounded font-medium text-sm hover:bg-green-700 transition"
             >
               Download All ({doneCount} {doneCount === 1 ? 'file' : 'files'})
+            </button>
+          )}
+
+          {zoneStats && onNavigateToScenarios && (
+            <button
+              onClick={onNavigateToScenarios}
+              style={{ backgroundColor: '#4A90D9' }}
+              className="mt-3 w-full px-3 py-2 text-white rounded font-medium text-sm hover:opacity-90 transition"
+            >
+              Comparer les scenarios &rarr;
             </button>
           )}
         </div>
