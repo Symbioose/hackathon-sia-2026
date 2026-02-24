@@ -10,6 +10,7 @@ import {
 } from './types';
 import { MapComponent } from './components/MapComponent';
 import { SidePanel } from './components/SidePanel';
+import { ComparisonPanel } from './components/ComparisonPanel';
 import {
   buildZoneFromGeoJson,
   GeoJsonZoneError,
@@ -120,6 +121,7 @@ function App(): React.ReactNode {
 
   const [displayLayers, setDisplayLayers] = useState<Record<string, AnalysisDisplayData>>({});
   const [displayLoading, setDisplayLoading] = useState<AnalysisType | null>(null);
+  const [activeTab, setActiveTab] = useState<'analyse' | 'comparaison'>('analyse');
 
   // Save state to localStorage whenever key states change
   useEffect(() => {
@@ -377,6 +379,8 @@ function App(): React.ReactNode {
     <div className="flex h-screen w-screen bg-gray-100">
       {/* Side Panel */}
       <SidePanel
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         paddingMeters={paddingMeters}
         onPaddingMetersChange={setPaddingMeters}
         geoJsonFileName={geoJsonFileName}
@@ -394,15 +398,19 @@ function App(): React.ReactNode {
         onToggleAnalysisDisplay={handleToggleAnalysisDisplay}
       />
 
-      {/* Main Map Area */}
-      <div className="flex-1 relative bg-gray-200">
-        <MapComponent
-          zoneGeoJsonWgs84={zone?.geoJsonWgs84 ?? null}
-          paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
-          analysisResults={analysisResults}
-          zoneStats={zone?.stats ?? null}
-          displayLayers={displayLayers}
-        />
+      {/* Main content area */}
+      <div className="flex-1 relative flex overflow-hidden">
+        {activeTab === 'analyse' ? (
+          <MapComponent
+            zoneGeoJsonWgs84={zone?.geoJsonWgs84 ?? null}
+            paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
+            analysisResults={analysisResults}
+            zoneStats={zone?.stats ?? null}
+            displayLayers={displayLayers}
+          />
+        ) : (
+          <ComparisonPanel />
+        )}
       </div>
     </div>
   );
