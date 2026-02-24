@@ -1,25 +1,27 @@
-import boto3
 import os
 from pathlib import Path
+
+import requests
 
 
 def generate_summary(csv_path: str) -> str:
     csv_input = _read_csv(csv_path)
 
-    try:
-        client = boto3.client(
-            service_name="bedrock-runtime",
-            region_name=os.getenv("AWS_REGION", "eu-west-1"),
-        )
-    except Exception:
-        return "Une erreur est survenue lors de la génération de la synthèse."
+    token = os.getenv("AWS_BEARER_TOKEN_BEDROCK", "")
+    if not token:
+        return "Erreur : clé API Bedrock manquante (AWS_BEARER_TOKEN_BEDROCK)."
 
-    model_id = os.getenv("AWS_BEDROCK_MODEL_ID", "mistral.mistral-7b-instruct-v0:2")
-    messages = [
-        {
-            "role": "user",
-            "content": [{
-                "text": f"""Tu es un expert en érosion des sols. Analyse uniquement les données suivantes, sans aucune connaissance externe.
+    region = os.getenv("AWS_REGION", "eu-west-1")
+    model_id = os.getenv("AWS_BEDROCK_MODEL_ID", "mistral.mistral-large-2402-v1:0")
+
+    url = f"https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/converse"
+
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [{
+                    "text": f"""Tu es un expert en érosion des sols. Analyse uniquement les données suivantes, sans aucune connaissance externe.
 
 Variables (noms CSV → français) :
 - infiltration → Infiltration (mm)
@@ -36,25 +38,33 @@ Instructions :
 Données :
 {csv_input}
 """
-            }]
-        }
-    ]
+                }]
+            }
+        ],
+        "inferenceConfig": {"maxTokens": 350},
+    }
 
     try:
-        response = client.converse(
-            modelId=model_id,
-            messages=messages,
-            inferenceConfig={"maxTokens": 350},
+        resp = requests.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+            json=body,
+            timeout=30,
         )
-    except Exception:
-        return "Une erreur est survenue lors de la génération de la synthèse."
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        return f"Erreur appel Bedrock : {exc}"
 
-    if "output" in response and "message" in response["output"]:
-        message = response["output"]["message"]
+    if "output" in data and "message" in data["output"]:
+        message = data["output"]["message"]
         if "content" in message and len(message["content"]) > 0:
             return message["content"][0].get("text", "").strip()
 
-    return "Une erreur est survenue lors de la génération de la synthèse."
+    return "Erreur : réponse inattendue de Bedrock."
 
 
 def _read_csv(csv_path: str) -> str:

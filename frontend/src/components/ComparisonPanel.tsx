@@ -195,6 +195,14 @@ export const ComparisonPanel: React.FC<{
   const fmtNum = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 5 });
   const fmtPct = (n: number) => `${n > 0 ? '+' : ''}${n}%`;
 
+  // For infiltration, positive change = good (green). For erosion/runoff, negative = good (green).
+  const POSITIVE_IS_GOOD = new Set<string>(['infiltration']);
+  const pctColor = (key: string, pct: number) => {
+    if (pct === 0) return 'text-gray-400';
+    const isGood = POSITIVE_IS_GOOD.has(key) ? pct > 0 : pct < 0;
+    return isGood ? 'text-green-600' : 'text-red-500';
+  };
+
   const handleDownloadSynthesis = () => {
     if (!result) return;
     const headers = ['Variable', 'ID Parcelle/Point', 'Scenario 1', 'Scenario 2', 'Différence'];
@@ -313,7 +321,7 @@ export const ComparisonPanel: React.FC<{
                               <td className="py-1.5 pr-4 text-gray-600">{p.id || '—'}</td>
                               <td className="py-1.5 pr-4 text-right text-gray-600">{fmtNum(p.scenario1_sum)}</td>
                               <td className="py-1.5 pr-4 text-right text-gray-600">{fmtNum(p.scenario2_sum)}</td>
-                              <td className={`py-1.5 text-right ${p.pct_change < 0 ? 'text-green-600' : p.pct_change > 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                              <td className={`py-1.5 text-right ${pctColor(key, p.pct_change)}`}>
                                 {fmtPct(p.pct_change)}
                               </td>
                             </tr>
@@ -329,7 +337,7 @@ export const ComparisonPanel: React.FC<{
                             <td className="py-1.5 pr-4 text-gray-500 italic">Total surface</td>
                             <td className="py-1.5 pr-4 text-right font-bold text-gray-800">{fmtNum(r.total.scenario1_sum)}</td>
                             <td className="py-1.5 pr-4 text-right font-bold text-gray-800">{fmtNum(r.total.scenario2_sum)}</td>
-                            <td className={`py-1.5 text-right font-bold ${r.total.pct_change < 0 ? 'text-green-600' : r.total.pct_change > 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                            <td className={`py-1.5 text-right font-bold ${pctColor(key, r.total.pct_change)}`}>
                               {fmtPct(r.total.pct_change)}
                             </td>
                           </tr>

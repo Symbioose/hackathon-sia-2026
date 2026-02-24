@@ -25,7 +25,7 @@ RASTER_LABELS = {
     "infiltration": "Capacité d'infiltration du sol (mm)",
     "interrill_erosion": "Érosion diffuse (kg)",
     "rill_erosion": "Érosion concentrée (kg)",
-    "surface_runoff": "Ruissellement",
+    "surface_runoff": "Ruissellement (m3)",
 }
 NODATA = -99999.0
 SAGA_CRS = "EPSG:2154"  # Lambert-93
