@@ -40,7 +40,6 @@ def _iter_points(coords):
     if not isinstance(coords, list) or not coords:
         return
 
-    # feuille: [x, y] ou [x, y, z]
     if len(coords) >= 2 and isinstance(coords[0], (int, float)) and isinstance(coords[1], (int, float)):
         yield float(coords[0]), float(coords[1])
         return
@@ -126,7 +125,6 @@ def get_emprise(input_path: str | Path, buffer: int = 0) -> dict[str, float]:
     if buffer < 0:
         raise ValueError("Le buffer doit etre >= 0.")
 
-    # Agrandit la bbox de 'buffer' metres dans les 4 directions.
     minx -= buffer
     miny -= buffer
     maxx += buffer
@@ -154,13 +152,11 @@ def telecharger_tif_lambert(xmin, ymin, xmax, ymax, fichier_sortie="mnt_final.ti
     Prend les 4 coordonnées d'une Bounding Box déjà en Lambert 93 (mètres)
     et télécharge directement le fichier TIF de l'IGN.
     """
-    # 1. On calcule la taille de l'image (1 pixel = 1 mètre)
     largeur = max(1, int(round(xmax - xmin)))
     hauteur = max(1, int(round(ymax - ymin)))
     
     print(f"📏 Zone demandée : {largeur}m x {hauteur}m")
     
-    # 2. Paramètres de l'API IGN
     url = "https://data.geopf.fr/wms-r/wms"
     params = {
         "SERVICE": "WMS",
@@ -175,7 +171,6 @@ def telecharger_tif_lambert(xmin, ymin, xmax, ymax, fichier_sortie="mnt_final.ti
         "FORMAT": "image/geotiff"
     }
 
-    # 3. On télécharge
     print("📡 Requête envoyée à l'IGN...")
     output_path = Path(fichier_sortie)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,7 +196,6 @@ def telecharger_tif_lambert(xmin, ymin, xmax, ymax, fichier_sortie="mnt_final.ti
     print(f"✅ SUCCÈS ! Fichier {fichier_sortie} récupéré ({taille_mo:.2f} Mo).")
     return str(output_path)
 
-# --- TEST AVEC LES COORDONNÉES DE TON GEOJSON ---
 if __name__ == "__main__":
     raise SystemExit(main())
     
