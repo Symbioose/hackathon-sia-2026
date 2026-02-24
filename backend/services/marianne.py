@@ -5,7 +5,7 @@ import math
 import os
 import re
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -75,7 +75,7 @@ def fetch_monthly_rainfall_average_last_ten_years_from_geojson(
     station_code = str(station.get("id"))
     station_lon, station_lat = _station_lon_lat(station)
 
-    last_complete_year = datetime.now(UTC).year - 1
+    last_complete_year = datetime.now(timezone.utc).year - 1
     final_year = end_year if end_year is not None else last_complete_year
     first_year = final_year - 9
 
