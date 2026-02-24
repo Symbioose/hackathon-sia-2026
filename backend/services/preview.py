@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import datetime
 import math
 import tempfile
 import zipfile
@@ -17,7 +18,7 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
-from rasterio.warp import transform_bounds
+from rasterio.warp import transform as warp_transform, transform_bounds
 
 
 def generate_mnt_preview(tif_path: str | Path) -> dict:
@@ -278,12 +279,22 @@ def _compute_domain_stats(features: list, geom_types: set, analysis_type: str | 
     return base
 
 
+def _json_safe(value: object) -> object:
+    """Convert a shapefile attribute value to a JSON-serializable type."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("latin-1", errors="replace")
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    return str(value)
+
+
 def shapefile_zip_to_geojson(zip_path: str | Path, analysis_type: str | None = None) -> dict:
     """Extract shapefile from ZIP, convert to WGS84 GeoJSON with domain stats.
 
     Returns dict with keys: geojson, stats, layer_name.
     """
-    import pyproj
     import shapefile as shp
 
     zip_path = Path(zip_path)
@@ -315,31 +326,26 @@ def shapefile_zip_to_geojson(zip_path: str | Path, analysis_type: str | None = N
     if reader is None:
         raise RuntimeError(f"Cannot open shapefile: {shp_file}")
 
-    # Detect CRS from .prj
+    # Detect CRS from .prj (default: Lambert-93)
     prj_file = shp_file.with_suffix(".prj")
-    src_crs = None
+    src_crs = "EPSG:2154"
     if prj_file.exists():
         prj_text = prj_file.read_text(errors="replace")
-        if "Lambert_Conformal_Conic" in prj_text or "2154" in prj_text:
-            src_crs = "EPSG:2154"
-        elif "4326" in prj_text or "GCS_WGS_1984" in prj_text:
+        if "4326" in prj_text or "GCS_WGS_1984" in prj_text:
             src_crs = "EPSG:4326"
+        elif "Lambert_Conformal_Conic" in prj_text or "2154" in prj_text:
+            src_crs = "EPSG:2154"
 
-    # Build transformer (default assumes Lambert93)
     need_transform = src_crs != "EPSG:4326"
-    if need_transform:
-        transformer = pyproj.Transformer.from_crs(
-            src_crs or "EPSG:2154", "EPSG:4326", always_xy=True,
-        )
 
     def transform_coords(coords: list) -> list:
-        """Recursively transform coordinate arrays."""
+        """Recursively reproject coordinate arrays to WGS84."""
         if not coords:
             return coords
         if isinstance(coords[0], (int, float)):
             if need_transform:
-                lon, lat = transformer.transform(coords[0], coords[1])
-                return [round(lon, 7), round(lat, 7)]
+                xs, ys = warp_transform(src_crs, "EPSG:4326", [coords[0]], [coords[1]])
+                return [round(xs[0], 7), round(ys[0], 7)]
             return [round(coords[0], 7), round(coords[1], 7)]
         return [transform_coords(c) for c in coords]
 
@@ -347,15 +353,13 @@ def shapefile_zip_to_geojson(zip_path: str | Path, analysis_type: str | None = N
     fields = [f[0] for f in reader.fields[1:]]  # skip DeletionFlag
     features = []
     for sr in reader.iterShapeRecords():
-        geom = sr.shape.__geo_interface__
+        geom = dict(sr.shape.__geo_interface__)  # mutable copy
         props = dict(zip(fields, sr.record))
-        clean_props = {}
-        for k, v in props.items():
-            if isinstance(v, bytes):
-                v = v.decode("latin-1", errors="replace")
-            clean_props[k] = v
+        clean_props = {k: _json_safe(v) for k, v in props.items()}
 
-        geom["coordinates"] = transform_coords(geom["coordinates"])
+        coords = geom.get("coordinates")
+        if coords is not None:
+            geom["coordinates"] = transform_coords(list(coords))
         features.append({
             "type": "Feature",
             "geometry": geom,
