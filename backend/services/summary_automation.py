@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 
-def generate_summary(csv_path: str):
+def generate_summary(csv_path: str) -> str:
     csv_input = _read_csv(csv_path)
 
     try:
@@ -14,55 +14,45 @@ def generate_summary(csv_path: str):
     except Exception:
         return "Une erreur est survenue lors de la génération de la synthèse."
 
-    # Define the model and message
     model_id = os.getenv("AWS_BEDROCK_MODEL_ID", "mistral.mistral-7b-instruct-v0:2")
     messages = [
         {
             "role": "user",
             "content": [{
-                "text": f"""
-                Tu es un expert en hydrologie, geologie et surtout en érosion en France.
+                "text": f"""Tu es un expert en érosion des sols. Analyse uniquement les données suivantes, sans aucune connaissance externe.
 
-                RÈGLES STRICTES :
-                1. Tu utiliseras les informations fournies dans le fichier CSV
-                2. Les informations à chercher sont sous format CSV avec des colonnes associées aux variables sur lesquelles tu vas te baser pour faire la synthèse.
-                3. Tu identifies automatiquement quelle colonne contient l’information pertinente. Tu associes les variables agronomiques et hydrologiques aux notions qu'il faut synthetiser.
-                4. Tu contextualises les données et les relies entre elles.
-                5. Tu produis une synthèse claire, structurée, sans hors-sujet.
-                6. Si une information n'existe pas dans les fichiers, tu écris : "Information non fournie".
-                7. Interdiction d'utiliser des connaissances externes.
-                8. Ne pas parler du format CSV
-                9. Réponds en français
-                10. Voici les noms en français des variables : infiltration, ruissellement, érosion interrill et érosion en rill:
-                    - "infiltration": "Capacité d'infiltration du sol (mm)",
-                    - "interrill_erosion": "Érosion diffuse (kg)",
-                    - "rill_erosion": "Érosion concentrée (kg)",
-                    - "surface_runoff": "Ruissellement",
+Variables (noms CSV → français) :
+- infiltration → Infiltration (mm)
+- interrill_erosion → Érosion diffuse (kg)
+- rill_erosion → Érosion concentrée (kg)
+- surface_runoff → Ruissellement
 
+Instructions :
+- Pour chaque variable, cite les totaux des deux scénarios et la variation en % exactement tels qu'ils apparaissent dans les données.
+- Conclus en 1 phrase sur quel scénario est le meilleur et pourquoi, en te basant uniquement sur les chiffres.
+- Sois direct, pas d'introduction, pas de conclusion générale, pas de blabla.
+- Réponds en français.
 
-                Fais une description synthétique en 3 phrases maximum de la comparaison entre les deux scénarios d'infiltration, de ruissellement, d'érosion interrill et d'érosion en rill.
-                Fais une recommandation du meilleur scénario en fonction de ces éléments.
-
-                Le contenu en format CSV est le suivant :
-                {csv_input}
-
-                """
-                }]
-        }]
+Données :
+{csv_input}
+"""
+            }]
+        }
+    ]
 
     try:
         response = client.converse(
             modelId=model_id,
             messages=messages,
+            inferenceConfig={"maxTokens": 350},
         )
     except Exception:
         return "Une erreur est survenue lors de la génération de la synthèse."
 
-    # Extract the generated text from the response
     if "output" in response and "message" in response["output"]:
         message = response["output"]["message"]
         if "content" in message and len(message["content"]) > 0:
-            return message["content"][0].get("text", "")
+            return message["content"][0].get("text", "").strip()
 
     return "Une erreur est survenue lors de la génération de la synthèse."
 

@@ -24,6 +24,7 @@ from services.mtn import get_emprise, telecharger_tif_lambert
 from services.rpg import RPG_DEFAULT_LAYER, fetch_rpg_shapefile_by_emprise
 from services.preview import generate_mnt_preview, shapefile_zip_to_geojson
 from services.saga_compare import compute_scenario_diff
+from services.summary_automation import generate_summary
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -361,6 +362,42 @@ def _compute_marianne_monthly_average(
     return result
 
 
+def _write_synthesis_csv(rasters: dict, csv_path: Path) -> None:
+    """Write a detailed per-parcelle synthesis CSV used by the AI summarizer."""
+    headers = ["Variable", "ID Parcelle/Point", "Scenario 1", "Scenario 2", "Différence (%)"]
+    rows: list[list[str]] = []
+
+    for r in rasters.values():
+        label: str = r["label"]
+        parcelles: list[dict] = r.get("parcelles", [])
+        total: dict = r["total"]
+
+        for i, p in enumerate(parcelles):
+            pct = p["pct_change"]
+            rows.append([
+                label if i == 0 else "",
+                p.get("id") or "—",
+                str(round(p["scenario1_sum"], 5)),
+                str(round(p["scenario2_sum"], 5)),
+                f"{'+' if pct > 0 else ''}{pct}%",
+            ])
+
+        pct_total = total["pct_change"]
+        rows.append([
+            label if not parcelles else "",
+            "Total surface",
+            str(round(total["scenario1_sum"], 5)),
+            str(round(total["scenario2_sum"], 5)),
+            f"{'+' if pct_total > 0 else ''}{pct_total}%",
+        ])
+        rows.append([])  # blank separator between variables
+
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(headers)
+        writer.writerows(rows)
+
+
 @app.post("/scenarios/compare")
 def scenarios_compare(
     zone_file: UploadFile | None = File(None),
@@ -422,11 +459,16 @@ def scenarios_compare(
     for name, png_path in result.get("diff_png_paths", {}).items():
         diff_preview_urls[name] = f"/files/scenarios/{run_id}/{Path(png_path).name}"
 
+    csv_path = out_dir / "synthesis.csv"
+    _write_synthesis_csv(result["rasters"], csv_path)
+    ai_summary = generate_summary(str(csv_path))
+
     return {
         "rasters": result["rasters"],
         "parcelle_ids": result["parcelle_ids"],
         "bounds_wgs84": result["bounds_wgs84"],
         "diff_preview_urls": diff_preview_urls,
+        "ai_summary": ai_summary,
     }
 
 

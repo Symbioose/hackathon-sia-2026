@@ -7,9 +7,9 @@ type FileKey = 'infiltration' | 'interrill_erosion' | 'rill_erosion' | 'surface_
 
 const FILE_SLOTS: { key: FileKey; label: string; icon: string }[] = [
   { key: 'infiltration',      label: 'Infiltration',       icon: '💧' },
-  { key: 'interrill_erosion', label: 'Interrill_erosion',    icon: '🌱' },
-  { key: 'rill_erosion',      label: 'Rrill_erosion', icon: '🪨' },
-  { key: 'surface_runoff',    label: 'Surface_runoff',      icon: '🌊' },
+  { key: 'interrill_erosion', label: 'Érosion diffuse',    icon: '🌱' },
+  { key: 'rill_erosion',      label: 'Érosion concentrée', icon: '🪨' },
+  { key: 'surface_runoff',    label: 'Ruissellement',      icon: '🌊' },
 ];
 
 type ScenarioFiles = Record<FileKey, File | null>;
@@ -17,7 +17,7 @@ type ScenarioFiles = Record<FileKey, File | null>;
 const emptyScenario = (): ScenarioFiles =>
   Object.fromEntries(FILE_SLOTS.map((s) => [s.key, null])) as ScenarioFiles;
 
-interface RasterTotal {
+interface RasterStats {
   scenario1_sum: number;
   scenario2_sum: number;
   pct_change: number;
@@ -25,8 +25,8 @@ interface RasterTotal {
 
 interface RasterResult {
   label: string;
-  parcelles: { id: string; scenario1_sum: number; scenario2_sum: number; pct_change: number }[];
-  total: RasterTotal;
+  parcelles: ({ id: string } & RasterStats)[];
+  total: RasterStats;
 }
 
 interface ComparisonResult {
@@ -34,6 +34,7 @@ interface ComparisonResult {
   parcelle_ids: string[];
   bounds_wgs84: { south: number; west: number; north: number; east: number };
   diff_preview_urls: Record<string, string>;
+  ai_summary: string;
 }
 
 // ── DropZone ───────────────────────────────────────────────────────────────────
@@ -164,7 +165,6 @@ export const ComparisonPanel: React.FC<{
     try {
       const formData = new FormData();
 
-      // Optional zone file from tab 1
       if (rawGeoJson) {
         formData.append(
           'zone_file',
@@ -173,7 +173,6 @@ export const ComparisonPanel: React.FC<{
         );
       }
 
-      // 4 raster files per scenario
       FILE_SLOTS.forEach((slot) => {
         formData.append(`scenario1_${slot.key}`, scenarioA[slot.key]!);
         formData.append(`scenario2_${slot.key}`, scenarioB[slot.key]!);
@@ -204,16 +203,15 @@ export const ComparisonPanel: React.FC<{
     Object.values(result.rasters).forEach((r) => {
       r.parcelles.forEach((p, i) => {
         rows.push([
-          i === 0 ? r.label : '',   // Variable only on first row
+          i === 0 ? r.label : '',
           p.id || '—',
           fmtNum(p.scenario1_sum),
           fmtNum(p.scenario2_sum),
           fmtPct(p.pct_change),
         ]);
       });
-      // Total surface row
       rows.push(['', 'Total surface', fmtNum(r.total.scenario1_sum), fmtNum(r.total.scenario2_sum), fmtPct(r.total.pct_change)]);
-      rows.push([]); // blank separator between variables
+      rows.push([]);
     });
 
     const csv = [headers, ...rows].map((r) => r.join(';')).join('\n');
@@ -269,31 +267,7 @@ export const ComparisonPanel: React.FC<{
         {result && (
           <div className="space-y-4">
 
-            {/* Diff preview images */}
-            <div className="grid grid-cols-2 gap-3">
-              {Object.entries(result.diff_preview_urls).map(([name, url]) => {
-                const label = result.rasters[name]?.label ?? name;
-                return (
-                  <div key={name} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-700">
-                      {label}
-                    </div>
-                    <img
-                      src={`${BASE_API}${url}`}
-                      alt={label}
-                      className="w-full object-contain"
-                      style={{ maxHeight: '180px' }}
-                    />
-                    <div className="px-3 py-1.5 flex justify-between text-xs text-gray-500">
-                      <span className="text-blue-500">■ Augmentation</span>
-                      <span className="text-red-500">■ Diminution</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Synthesis bubble */}
+            {/* Synthesis table */}
             <div className="bg-white border-2 rounded-2xl p-5 shadow-sm" style={{ borderColor: '#61C299' }}>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -322,17 +296,16 @@ export const ComparisonPanel: React.FC<{
                   </thead>
                   <tbody>
                     {Object.entries(result.rasters).map(([key, r]) => {
-                      const parcelleRows = r.parcelles;
-                      const rowCount = parcelleRows.length + 1; // parcelles + total
+                      const rowCount = r.parcelles.length + 1;
                       return (
-                        <>
-                          {parcelleRows.map((p, i) => (
-                            <tr key={`${key}-${p.id}`} className="border-t border-gray-100 hover:bg-gray-50">
+                        <React.Fragment key={key}>
+                          {r.parcelles.map((p, i) => (
+                            <tr key={`${key}-${p.id}-${i}`} className="border-t border-gray-100 hover:bg-gray-50">
                               {i === 0 && (
                                 <td
                                   rowSpan={rowCount}
                                   className="py-1.5 pr-4 font-bold text-gray-800 align-top pt-2"
-                                  style={{ borderTop: i === 0 ? '2px solid #e5e7eb' : undefined }}
+                                  style={{ borderTop: '2px solid #e5e7eb' }}
                                 >
                                   {r.label}
                                 </td>
@@ -345,7 +318,13 @@ export const ComparisonPanel: React.FC<{
                               </td>
                             </tr>
                           ))}
-                          {/* Total surface row */}
+                          {r.parcelles.length === 0 && (
+                            <tr className="border-t-2 border-gray-200">
+                              <td className="py-1.5 pr-4 font-bold text-gray-800" style={{ borderTop: '2px solid #e5e7eb' }}>
+                                {r.label}
+                              </td>
+                            </tr>
+                          )}
                           <tr key={`${key}-total`} className="border-t border-gray-200">
                             <td className="py-1.5 pr-4 text-gray-500 italic">Total surface</td>
                             <td className="py-1.5 pr-4 text-right font-bold text-gray-800">{fmtNum(r.total.scenario1_sum)}</td>
@@ -354,13 +333,26 @@ export const ComparisonPanel: React.FC<{
                               {fmtPct(r.total.pct_change)}
                             </td>
                           </tr>
-                        </>
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {/* AI synthesis bubble */}
+            {result.ai_summary && (
+              <div className="bg-white border-2 rounded-2xl p-5 shadow-sm" style={{ borderColor: '#61C299' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#61C299' }} />
+                  <h3 className="font-semibold text-gray-800">Synthèse IA</h3>
+                </div>
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {result.ai_summary}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

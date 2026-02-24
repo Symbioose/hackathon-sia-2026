@@ -6,5 +6,5 @@ pyshp>=2.3.1
 rasterio
 matplotlib
 pyproj
-dotenv
+python-dotenv
 boto3
