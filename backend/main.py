@@ -24,6 +24,7 @@ from services.marianne import fetch_monthly_rainfall_average_last_ten_years_from
 from services.mtn import get_emprise, telecharger_tif_lambert
 from services.rpg import RPG_DEFAULT_LAYER, fetch_rpg_shapefile_by_emprise
 from services.preview import generate_mnt_preview, shapefile_zip_to_geojson
+from services.saga_compare import compute_scenario_diff
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -359,6 +360,43 @@ def _compute_marianne_monthly_average(
     finally:
         _cleanup_upload(zone_file, zone_path)
     return result
+
+
+@app.post("/scenarios/compare")
+def scenarios_compare(
+    zone_file: UploadFile = File(...),
+    scenario1_dir: str = Form("/Users/macbook/Downloads/scenario1"),
+    scenario2_dir: str = Form("/Users/macbook/Downloads/scenario2"),
+) -> dict:
+    """Compare two SAGA scenario raster sets, clipped to zone polygon."""
+    zone_path = _save_upload(zone_file)
+    run_id = uuid4().hex
+    out_dir = OUTPUTS_DIR / "scenarios" / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = compute_scenario_diff(
+            scenario1_dir=Path(scenario1_dir),
+            scenario2_dir=Path(scenario2_dir),
+            zone_geojson_path=zone_path,
+            output_dir=out_dir,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        _cleanup_upload(zone_file, zone_path)
+
+    # Build URLs from PNGs already written to out_dir
+    diff_preview_urls: dict[str, str] = {}
+    for name, png_path in result.get("diff_png_paths", {}).items():
+        diff_preview_urls[name] = f"/files/scenarios/{run_id}/{Path(png_path).name}"
+
+    return {
+        "rasters": result["rasters"],
+        "parcelle_ids": result["parcelle_ids"],
+        "bounds_wgs84": result["bounds_wgs84"],
+        "diff_preview_urls": diff_preview_urls,
+    }
 
 
 if __name__ == "__main__":
