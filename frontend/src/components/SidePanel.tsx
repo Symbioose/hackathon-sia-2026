@@ -7,6 +7,10 @@ import {
   ZoneStats,
 } from '../types';
 
+// Import logos - using Vite absolute paths from project root
+const DesignerLogo = '/assets/Designer.png';
+const BrandLogo = '/assets/Logo.png';
+
 interface SidePanelProps {
   paddingMeters: ZonePadding;
   onPaddingMetersChange: (padding: ZonePadding) => void;
@@ -106,8 +110,14 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   return (
     <div className="w-80 bg-white shadow-lg flex flex-col h-full">
       {/* Header */}
-      <div className="bg-blue-600 text-white p-4">
-        <h1 className="text-xl font-bold">Zone Selection Tool</h1>
+      <div style={{ backgroundColor: '#61C299' }} className="text-white p-4">
+        <div className="flex gap-3 mb-2">
+          <img src={DesignerLogo} alt="OSAI Logo" className="w-1/4 object-contain" />
+          <div className="flex flex-col justify-center">
+            <h1 className="text-2xl font-bold">OSAI</h1>
+            <p className="text-sm opacity-90">Ombrea Soil Analytics AI</p>
+          </div>
+        </div>
       </div>
 
       {/* Content */}
@@ -133,7 +143,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
                     buffer: Number(e.target.value),
                   })
                 }
-                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2"
+                style={{ '--tw-ring-color': '#61C299' } as React.CSSProperties}
               />
             </div>
           </div>
@@ -149,7 +160,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           <div className="flex gap-2">
             <button
               onClick={openFilePicker}
-              className="flex-1 px-3 py-2 bg-blue-600 text-white rounded font-medium text-sm hover:bg-blue-700 transition"
+              style={{ backgroundColor: '#61C299' }}
+              className="flex-1 px-3 py-2 text-white rounded font-medium text-sm hover:opacity-90 transition"
             >
               Import GeoJSON
             </button>
@@ -199,7 +211,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
                       [opt.type]: e.target.checked,
                     })
                   }
-                  className="h-4 w-4 text-blue-600"
+                  className="h-4 w-4"
+                  style={{ accentColor: '#61C299' }}
                 />
                 <span>{opt.label}</span>
               </label>
@@ -209,7 +222,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           <button
             onClick={onRunSelectedAnalyses}
             disabled={selectedCount === 0 || !zoneStats}
-            className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded font-medium text-sm hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: selectedCount === 0 || !zoneStats ? undefined : '#61C299' }}
+            className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded font-medium text-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Run Selected ({selectedCount})
           </button>
@@ -221,8 +235,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
             </div>
             <div className="h-2 bg-gray-200 rounded">
               <div
-                className="h-2 bg-blue-600 rounded"
-                style={{ width: `${progressPercent}%` }}
+                className="h-2 rounded"
+                style={{ width: `${progressPercent}%`, backgroundColor: '#61C299' }}
               />
             </div>
           </div>
@@ -263,11 +277,11 @@ export const SidePanel: React.FC<SidePanelProps> = ({
         </div>
 
         {/* Instructions */}
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-3">
-          <h3 className="text-sm font-semibold text-blue-900 mb-2">
+        <div className="bg-green-50 border-l-4 p-3" style={{ borderColor: '#61C299' }}>
+          <h3 className="text-sm font-semibold text-gray-800 mb-2">
             How to use:
           </h3>
-          <ol className="text-xs text-blue-800 space-y-1">
+          <ol className="text-xs text-gray-700 space-y-1">
             <li>1. Import a GeoJSON file (Polygon/MultiPolygon)</li>
             <li>2. Adjust padding (meters in Lambert-93)</li>
             <li>3. Select analyses and run the requests</li>
@@ -277,9 +291,14 @@ export const SidePanel: React.FC<SidePanelProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-gray-200 p-3 bg-gray-50 text-center text-xs text-gray-500">
-        <p>Hackathon SIA 2026</p>
-        <p>Zone Selection Tool v1.0</p>
+      <div className="border-t border-gray-200 p-4 bg-gray-50">
+        <div className="flex justify-center mb-3">
+          <img src={BrandLogo} alt="Brand Logo" className="h-8 object-contain" />
+        </div>
+        <div className="text-center text-xs text-gray-500">
+          <p>Hackathon SIA 2026</p>
+          <p className="mt-1">OSAI v1.0</p>
+        </div>
       </div>
     </div>
   );

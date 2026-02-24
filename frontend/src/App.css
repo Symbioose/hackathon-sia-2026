@@ -46,3 +46,22 @@ body,
 .zone-tooltip .leaflet-tooltip-bottom::before {
   border-color: transparent;
 }
+
+/* OSAI Brand Colors */
+:root {
+  --osai-primary: #61C299;
+  --osai-primary-hover: #4fb585;
+}
+
+/* Custom focus ring color */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  --tw-ring-color: #61C299;
+  box-shadow: 0 0 0 2px rgba(97, 194, 153, 0.5);
+}
+
+input[type="checkbox"]:checked {
+  accent-color: #61C299;
+}
