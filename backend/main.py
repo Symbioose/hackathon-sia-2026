@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import os
 import shutil
 from pathlib import Path
@@ -321,7 +322,20 @@ def marianne_rainfall_monthly_average_only(
         end_year=end_year,
         api_key=api_key,
     )
-    return {"monthly_average_mm": result.get("monthly_average_mm", {})}
+
+    run_id = uuid4().hex
+    out_dir = OUTPUTS_DIR / "marianne" / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "rainfall_monthly_average.csv"
+
+    averages = result.get("monthly_average_mm", {})
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["month", "average_mm"])
+        for month, value in sorted(averages.items()):
+            writer.writerow([month, value if value is not None else ""])
+
+    return {"download_url": f"/files/marianne/{run_id}/rainfall_monthly_average.csv"}
 
 
 def _compute_marianne_monthly_average(
