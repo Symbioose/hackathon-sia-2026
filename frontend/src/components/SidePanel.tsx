@@ -7,6 +7,7 @@ import {
   ZonePadding,
   ZoneStats,
 } from '../types';
+import { BASE_API } from '../config';
 
 // Import logos - using Vite absolute paths from project root
 const DesignerLogo = '/assets/Designer.png';
@@ -84,7 +85,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
       // Fetch all files and add them to the ZIP
       await Promise.all(
         successfulResults.map(async (result) => {
-          const response = await fetch(`http://localhost:8001${result.url}`);
+          const response = await fetch(`${BASE_API}${result.url}`);
           const blob = await response.blob();
           // Extract filename from URL path
           const urlParts = result?.url?.split('/');
@@ -264,11 +265,14 @@ export const SidePanel: React.FC<SidePanelProps> = ({
               const isSuccess = item.status === 'success';
               const isPending = item.status === 'pending';
               const isLoadingThis = displayLoading === opt.type;
+              const isDownloadOnly = opt.type === 'pluie'; // CSV files are download-only
 
               const statusLabelMap: Record<typeof item.status, string> = {
                 idle: 'Idle',
                 pending: 'En cours...',
-                success: isActive ? 'Affiché' : 'Cliquer pour afficher',
+                success: isDownloadOnly
+                  ? 'Prêt à télécharger'
+                  : (isActive ? 'Affiché' : 'Cliquer pour afficher'),
                 error: 'Erreur',
               };
               const statusLabel = statusLabelMap[item.status];
@@ -276,11 +280,11 @@ export const SidePanel: React.FC<SidePanelProps> = ({
               return (
                 <div
                   key={opt.type}
-                  onClick={isSuccess ? () => onToggleAnalysisDisplay(opt.type) : undefined}
+                  onClick={isSuccess && !isDownloadOnly ? () => onToggleAnalysisDisplay(opt.type) : undefined}
                   className={`border rounded p-2 transition-all ${
                     isActive
                       ? 'border-green-400 bg-green-50 shadow-sm'
-                      : isSuccess
+                      : isSuccess && !isDownloadOnly
                         ? 'border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer'
                         : 'border-gray-200'
                   }`}

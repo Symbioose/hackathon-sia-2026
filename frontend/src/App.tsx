@@ -14,12 +14,12 @@ import {
   buildZoneFromGeoJson,
   GeoJsonZoneError,
 } from './utils/geoJsonZone';
+import { BASE_API } from './config';
 import './App.css';
+
 
 function App(): React.ReactNode {
   type RawGeoJson = Record<string, unknown>;
-
-  const BASE_API = 'http://localhost:8001';
 
   // API configuration for each analysis type
   interface ApiConfig {
@@ -33,6 +33,7 @@ function App(): React.ReactNode {
     occupation_sols: { endpoint: '/bdtopo/download', layerParam: 'BDTOPO_V3:batiment,BDTOPO_V3:cimetiere,BDTOPO_V3:haie,BDTOPO_V3:surface_hydrographique,BDTOPO_V3:terrain_de_sport,BDTOPO_V3:troncon_de_route,BDTOPO_V3:zone_de_vegetation' },
     culture: { endpoint: '/rpg/download', layerParam: 'RPG.LATEST:parcelles_graphiques' },
     bassin_versant: { endpoint: '/bdtopage/download', layerParam: 'BDTOPO_V3:bassin_versant_topographique' },
+    pluie: { endpoint: '/marianne/rainfall/monthly-average' },
   };
 
   const ANALYSIS_OPTIONS: Array<{ type: AnalysisType; label: string }> = [
@@ -41,6 +42,7 @@ function App(): React.ReactNode {
     { type: 'occupation_sols', label: 'Occupation des sols' },
     { type: 'culture', label: 'Culture' },
     { type: 'bassin_versant', label: 'Bassin versant' },
+    { type: 'pluie', label: 'Données de pluie' },
   ];
 
   // Initialize state from localStorage or defaults
@@ -59,6 +61,7 @@ function App(): React.ReactNode {
             occupation_sols: false,
             culture: false,
             bassin_versant: false,
+            pluie: false,
           },
           analysisResults: parsed.analysisResults || {
             mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
@@ -66,6 +69,7 @@ function App(): React.ReactNode {
             occupation_sols: { type: 'occupation_sols', label: 'Occupation des sols', status: 'idle' },
             culture: { type: 'culture', label: 'Culture', status: 'idle' },
             bassin_versant: { type: 'bassin_versant', label: 'Bassin versant', status: 'idle' },
+            pluie: { type: 'pluie', label: 'Données de pluie', status: 'idle' },
           },
         };
       }
@@ -82,6 +86,7 @@ function App(): React.ReactNode {
         occupation_sols: false,
         culture: false,
         bassin_versant: false,
+        pluie: false,
       },
       analysisResults: {
         mnt: { type: 'mnt', label: 'MNT', status: 'idle' },
@@ -89,6 +94,7 @@ function App(): React.ReactNode {
         occupation_sols: { type: 'occupation_sols', label: 'Occupation des sols', status: 'idle' },
         culture: { type: 'culture', label: 'Culture', status: 'idle' },
         bassin_versant: { type: 'bassin_versant', label: 'Bassin versant', status: 'idle' },
+        pluie: { type: 'pluie', label: 'Données de pluie', status: 'idle' },
       },
     };
   };
@@ -156,6 +162,11 @@ function App(): React.ReactNode {
   }, [rawGeoJson, paddingMeters]);
 
   const handleToggleAnalysisDisplay = async (type: AnalysisType) => {
+    // Skip display for CSV files (rainfall data)
+    if (type === 'pluie') {
+      return;
+    }
+
     // Toggle off if already displayed
     if (displayLayers[type]) {
       setDisplayLayers((prev) => {
@@ -247,6 +258,7 @@ function App(): React.ReactNode {
       occupation_sols: { type: 'occupation_sols', label: 'Occupation des sols', status: 'idle' },
       culture: { type: 'culture', label: 'Culture', status: 'idle' },
       bassin_versant: { type: 'bassin_versant', label: 'Bassin versant', status: 'idle' },
+      pluie: { type: 'pluie', label: 'Données de pluie', status: 'idle' },
     });
 
     try {

@@ -34,6 +34,7 @@ const ANALYSIS_COLORS: Record<AnalysisType, string> = {
   occupation_sols: '#FF9800',
   culture: '#8BC34A',
   bassin_versant: '#9C27B0',
+  pluie: '#00BCD4',
 };
 
 interface MapComponentProps {

@@ -107,7 +107,8 @@ export type AnalysisType =
   | 'axe_ruissellement'
   | 'occupation_sols'
   | 'culture'
-  | 'bassin_versant';
+  | 'bassin_versant'
+  | 'pluie';
 
 export type AnalysisStatus = 'idle' | 'pending' | 'success' | 'error';
 
