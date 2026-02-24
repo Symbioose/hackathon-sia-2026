@@ -118,3 +118,36 @@ export interface AnalysisResult {
   url?: string;
   error?: string;
 }
+
+// --- Analysis display data (preview on map) ---
+
+export interface MntStats {
+  alt_min: number;
+  alt_max: number;
+  alt_mean: number;
+  resolution_m: number;
+  width_px: number;
+  height_px: number;
+}
+
+export interface MntDisplayData {
+  kind: 'raster';
+  png_url: string;
+  bounds: { south: number; west: number; north: number; east: number };
+  stats: MntStats;
+}
+
+export interface VectorStats {
+  feature_count: number;
+  geometry_type: string;
+  attributes_summary?: string[];
+}
+
+export interface VectorDisplayData {
+  kind: 'vector';
+  geojson: GeoJsonFeatureCollection;
+  stats: VectorStats;
+  layer_name: string;
+}
+
+export type AnalysisDisplayData = MntDisplayData | VectorDisplayData;

@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import JSZip from 'jszip';
 import {
+  AnalysisDisplayData,
   AnalysisResult,
   AnalysisType,
   ZonePadding,
@@ -10,6 +11,13 @@ import {
 // Import logos - using Vite absolute paths from project root
 const DesignerLogo = '/assets/Designer.png';
 const BrandLogo = '/assets/Logo.png';
+
+const Spinner: React.FC<{ className?: string }> = ({ className = 'h-4 w-4' }) => (
+  <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+  </svg>
+);
 
 interface SidePanelProps {
   paddingMeters: ZonePadding;
@@ -26,6 +34,11 @@ interface SidePanelProps {
   onSelectedAnalysesChange: (next: Record<AnalysisType, boolean>) => void;
   analysisResults: Record<AnalysisType, AnalysisResult>;
   onRunSelectedAnalyses: () => void;
+
+  activeAnalysis: AnalysisType | null;
+  displayData: AnalysisDisplayData | null;
+  displayLoading: boolean;
+  onToggleAnalysisDisplay: (type: AnalysisType) => void;
 }
 
 export const SidePanel: React.FC<SidePanelProps> = ({
@@ -41,6 +54,10 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   onSelectedAnalysesChange,
   analysisResults,
   onRunSelectedAnalyses,
+  activeAnalysis,
+  displayData,
+  displayLoading,
+  onToggleAnalysisDisplay,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -69,7 +86,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
       // Fetch all files and add them to the ZIP
       await Promise.all(
         successfulResults.map(async (result) => {
-          const response = await fetch(`http://localhost:8000${result.url}`);
+          const response = await fetch(`http://localhost:8001${result.url}`);
           const blob = await response.blob();
           // Extract filename from URL path
           const urlParts = result?.url?.split('/');
@@ -241,22 +258,58 @@ export const SidePanel: React.FC<SidePanelProps> = ({
             </div>
           </div>
 
+          {/* Analysis result rows — clickable when completed */}
           <div className="mt-3 space-y-2">
             {progressItems.map((opt) => {
               const item = analysisResults[opt.type];
+              const isActive = activeAnalysis === opt.type;
+              const isSuccess = item.status === 'success';
+              const isPending = item.status === 'pending';
+              const isLoadingThis = displayLoading && activeAnalysis === opt.type;
+
               const statusLabelMap: Record<typeof item.status, string> = {
                 idle: 'Idle',
-                pending: 'En cours',
-                success: 'Terminé',
+                pending: 'En cours...',
+                success: isActive ? 'Affiché' : 'Cliquer pour afficher',
                 error: 'Erreur',
               };
               const statusLabel = statusLabelMap[item.status];
 
               return (
-                <div key={opt.type} className="border border-gray-200 rounded p-2">
+                <div
+                  key={opt.type}
+                  onClick={isSuccess ? () => onToggleAnalysisDisplay(opt.type) : undefined}
+                  className={`border rounded p-2 transition-all ${
+                    isActive
+                      ? 'border-green-400 bg-green-50 shadow-sm'
+                      : isSuccess
+                        ? 'border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer'
+                        : 'border-gray-200'
+                  }`}
+                  style={isActive ? { borderColor: '#61C299' } : undefined}
+                >
                   <div className="text-xs text-gray-700 flex items-center justify-between">
-                    <span>{item.label}</span>
-                    <span className="text-gray-500">{statusLabel}</span>
+                    <div className="flex items-center gap-1.5">
+                      {isActive && (
+                        <span
+                          className="inline-block w-2 h-2 rounded-full"
+                          style={{ backgroundColor: '#61C299' }}
+                        />
+                      )}
+                      <span className={isActive ? 'font-semibold' : ''}>{item.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {isPending && <Spinner className="h-3 w-3 text-gray-400" />}
+                      {isLoadingThis && <Spinner className="h-3 w-3 text-green-500" />}
+                      <span className={`${
+                        isActive ? 'text-green-600 font-medium' :
+                        isSuccess ? 'text-green-600' :
+                        item.status === 'error' ? 'text-red-500' :
+                        'text-gray-500'
+                      }`}>
+                        {isLoadingThis ? 'Chargement...' : statusLabel}
+                      </span>
+                    </div>
                   </div>
                   {item.status === 'error' && item.error && (
                     <div className="text-xs text-red-600 mt-1">{item.error}</div>
@@ -276,6 +329,78 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           )}
         </div>
 
+        {/* Statistics Panel — shown when an analysis is displayed */}
+        {displayData && activeAnalysis && (
+          <div className="border rounded-lg p-3" style={{ borderColor: '#61C299' }}>
+            <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-1.5">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: '#61C299' }}
+              />
+              Statistiques
+            </h3>
+
+            {displayData.kind === 'raster' && (
+              <div className="text-xs text-gray-700 space-y-1">
+                <div className="flex justify-between">
+                  <span>Altitude min</span>
+                  <span className="font-medium">{displayData.stats.alt_min} m</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Altitude max</span>
+                  <span className="font-medium">{displayData.stats.alt_max} m</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Altitude moyenne</span>
+                  <span className="font-medium">{displayData.stats.alt_mean} m</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Résolution</span>
+                  <span className="font-medium">{displayData.stats.resolution_m} m</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Dimensions</span>
+                  <span className="font-medium">{displayData.stats.width_px} × {displayData.stats.height_px} px</span>
+                </div>
+              </div>
+            )}
+
+            {displayData.kind === 'vector' && (
+              <div className="text-xs text-gray-700 space-y-1">
+                <div className="flex justify-between">
+                  <span>Entités</span>
+                  <span className="font-medium">{displayData.stats.feature_count}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Type géométrie</span>
+                  <span className="font-medium">{displayData.stats.geometry_type}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Couche</span>
+                  <span className="font-medium">{displayData.layer_name}</span>
+                </div>
+                {displayData.stats.attributes_summary && displayData.stats.attributes_summary.length > 0 && (
+                  <div className="mt-1.5">
+                    <span className="text-gray-500">Attributs :</span>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {displayData.stats.attributes_summary.slice(0, 5).map((attr) => (
+                        <span key={attr} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">
+                          {attr}
+                        </span>
+                      ))}
+                      {displayData.stats.attributes_summary.length > 5 && (
+                        <span className="text-gray-400 text-[10px]">
+                          +{displayData.stats.attributes_summary.length - 5}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Instructions */}
         <div className="bg-green-50 border-l-4 p-3" style={{ borderColor: '#61C299' }}>
           <h3 className="text-sm font-semibold text-gray-800 mb-2">
@@ -285,7 +410,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
             <li>1. Import a GeoJSON file (Polygon/MultiPolygon)</li>
             <li>2. Adjust padding (meters in Lambert-93)</li>
             <li>3. Select analyses and run the requests</li>
-            <li>4. Download the generated files</li>
+            <li>4. Click a completed analysis to display it on the map</li>
+            <li>5. Download the generated files</li>
           </ol>
         </div>
       </div>

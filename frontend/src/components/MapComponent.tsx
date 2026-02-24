@@ -8,7 +8,14 @@ import {
   ImageOverlay,
 } from 'react-leaflet';
 import L from 'leaflet';
-import { AnalysisResult, AnalysisType, GeoJsonFeatureCollection, Wgs84Bounds, ZoneStats } from '../types';
+import {
+  AnalysisDisplayData,
+  AnalysisResult,
+  AnalysisType,
+  GeoJsonFeatureCollection,
+  Wgs84Bounds,
+  ZoneStats,
+} from '../types';
 
 // Fix Leaflet default icon issue with bundlers
 import 'leaflet/dist/leaflet.css';
@@ -20,12 +27,22 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+// Color scheme per analysis type
+const ANALYSIS_COLORS: Record<AnalysisType, string> = {
+  mnt: '#795548',
+  axe_ruissellement: '#2196F3',
+  occupation_sols: '#FF9800',
+  culture: '#8BC34A',
+  bassin_versant: '#9C27B0',
+};
 
 interface MapComponentProps {
   zoneGeoJsonWgs84: GeoJsonFeatureCollection | null;
   paddedBoundsWgs84: Wgs84Bounds | null;
   analysisResults: Record<AnalysisType, AnalysisResult>;
   zoneStats: ZoneStats | null;
+  activeAnalysis: AnalysisType | null;
+  displayData: AnalysisDisplayData | null;
 }
 
 interface ZoneLayersProps {
@@ -117,6 +134,87 @@ const ZoneLayers: React.FC<ZoneLayersProps> = ({
   );
 };
 
+// --- Loading Overlay ---
+const LoadingOverlay: React.FC<{
+  analysisResults: Record<AnalysisType, AnalysisResult>;
+}> = ({ analysisResults }) => {
+  const pendingItems = Object.values(analysisResults).filter(
+    (r) => r.status === 'pending'
+  );
+  if (pendingItems.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/30 pointer-events-none">
+      <div className="bg-white rounded-xl shadow-2xl p-6 max-w-xs w-full pointer-events-auto">
+        <div className="flex items-center gap-3 mb-4">
+          <svg className="animate-spin h-6 w-6 text-green-500" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="font-semibold text-gray-800">Analyses en cours...</span>
+        </div>
+        <ul className="space-y-2">
+          {pendingItems.map((item) => (
+            <li key={item.type} className="flex items-center gap-2 text-sm text-gray-600">
+              <svg className="animate-spin h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              {item.label}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+// --- Analysis Layer (rendered inside MapContainer) ---
+const AnalysisLayer: React.FC<{
+  activeAnalysis: AnalysisType;
+  displayData: AnalysisDisplayData;
+}> = ({ activeAnalysis, displayData }) => {
+  if (displayData.kind === 'raster') {
+    const { png_url, bounds } = displayData;
+    return (
+      <ImageOverlay
+        url={png_url}
+        bounds={[
+          [bounds.south, bounds.west],
+          [bounds.north, bounds.east],
+        ]}
+        opacity={0.7}
+      />
+    );
+  }
+
+  // Vector layer
+  const color = ANALYSIS_COLORS[activeAnalysis] || '#3388ff';
+  return (
+    <GeoJSON
+      key={activeAnalysis + JSON.stringify(displayData.stats)}
+      data={displayData.geojson as any}
+      style={{
+        color,
+        weight: 2,
+        fillColor: color,
+        fillOpacity: 0.25,
+      }}
+      onEachFeature={(feature, layer) => {
+        if (feature.properties) {
+          const entries = Object.entries(feature.properties).slice(0, 8);
+          if (entries.length > 0) {
+            const html = entries
+              .map(([k, v]) => `<strong>${k}:</strong> ${v ?? '—'}`)
+              .join('<br/>');
+            layer.bindPopup(`<div style="font-size:12px;max-width:250px">${html}</div>`);
+          }
+        }
+      }}
+    />
+  );
+};
+
 const SATELLITE_TILE = {
   url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   attribution:
@@ -129,39 +227,37 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   paddedBoundsWgs84,
   analysisResults,
   zoneStats,
+  activeAnalysis,
+  displayData,
 }) => {
   return (
-    <MapContainer
-      center={[48.8566, 2.3522]} // Paris as default
-      zoom={6}
-      style={{ height: '100%', width: '100%' }}
-    >
-      <TileLayer
-        url={SATELLITE_TILE.url}
-        attribution={SATELLITE_TILE.attribution}
-        maxZoom={SATELLITE_TILE.maxZoom}
-      />
+    <div className="relative w-full h-full">
+      <LoadingOverlay analysisResults={analysisResults} />
 
-      <ZoneLayers
-        zoneGeoJsonWgs84={zoneGeoJsonWgs84}
-        paddedBoundsWgs84={paddedBoundsWgs84}
-        zoneStats={zoneStats}
-      />
+      <MapContainer
+        center={[48.8566, 2.3522]}
+        zoom={6}
+        style={{ height: '100%', width: '100%' }}
+      >
+        <TileLayer
+          url={SATELLITE_TILE.url}
+          attribution={SATELLITE_TILE.attribution}
+          maxZoom={SATELLITE_TILE.maxZoom}
+        />
 
-      {paddedBoundsWgs84 &&
-        Object.values(analysisResults)
-          .filter((item) => item.status === 'success' && item.url)
-          .map((item) => (
-            <ImageOverlay
-              key={item.type}
-              url={item.url as string}
-              bounds={[
-                [paddedBoundsWgs84.southWest.lat, paddedBoundsWgs84.southWest.lng],
-                [paddedBoundsWgs84.northEast.lat, paddedBoundsWgs84.northEast.lng],
-              ]}
-              opacity={0.7}
-            />
-          ))}
-    </MapContainer>
+        <ZoneLayers
+          zoneGeoJsonWgs84={zoneGeoJsonWgs84}
+          paddedBoundsWgs84={paddedBoundsWgs84}
+          zoneStats={zoneStats}
+        />
+
+        {activeAnalysis && displayData && (
+          <AnalysisLayer
+            activeAnalysis={activeAnalysis}
+            displayData={displayData}
+          />
+        )}
+      </MapContainer>
+    </div>
   );
 };
