@@ -140,7 +140,10 @@ export interface MntDisplayData {
 export interface VectorStats {
   feature_count: number;
   geometry_type: string;
-  attributes_summary?: string[];
+  total_area_ha?: number;
+  total_length_km?: number;
+  distribution?: Record<string, { count: number; area_ha?: number }>;
+  extra?: Record<string, string | number>;
 }
 
 export interface VectorDisplayData {

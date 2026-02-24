@@ -35,9 +35,8 @@ interface SidePanelProps {
   analysisResults: Record<AnalysisType, AnalysisResult>;
   onRunSelectedAnalyses: () => void;
 
-  activeAnalysis: AnalysisType | null;
-  displayData: AnalysisDisplayData | null;
-  displayLoading: boolean;
+  displayLayers: Record<string, AnalysisDisplayData>;
+  displayLoading: AnalysisType | null;
   onToggleAnalysisDisplay: (type: AnalysisType) => void;
 }
 
@@ -54,8 +53,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   onSelectedAnalysesChange,
   analysisResults,
   onRunSelectedAnalyses,
-  activeAnalysis,
-  displayData,
+  displayLayers,
   displayLoading,
   onToggleAnalysisDisplay,
 }) => {
@@ -262,10 +260,10 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           <div className="mt-3 space-y-2">
             {progressItems.map((opt) => {
               const item = analysisResults[opt.type];
-              const isActive = activeAnalysis === opt.type;
+              const isActive = !!displayLayers[opt.type];
               const isSuccess = item.status === 'success';
               const isPending = item.status === 'pending';
-              const isLoadingThis = displayLoading && activeAnalysis === opt.type;
+              const isLoadingThis = displayLoading === opt.type;
 
               const statusLabelMap: Record<typeof item.status, string> = {
                 idle: 'Idle',
@@ -329,77 +327,123 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           )}
         </div>
 
-        {/* Statistics Panel — shown when an analysis is displayed */}
-        {displayData && activeAnalysis && (
-          <div className="border rounded-lg p-3" style={{ borderColor: '#61C299' }}>
-            <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-1.5">
-              <span
-                className="inline-block w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: '#61C299' }}
-              />
-              Statistiques
-            </h3>
+        {/* Statistics Panels — one card per active layer */}
+        {Object.entries(displayLayers).map(([type, layerData]) => {
+          const label = analysisOptions.find((o) => o.type === type)?.label ?? type;
+          return (
+            <div key={type} className="border rounded-lg p-3" style={{ borderColor: '#61C299' }}>
+              <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full"
+                    style={{ backgroundColor: '#61C299' }}
+                  />
+                  {label}
+                </span>
+                <button
+                  onClick={() => onToggleAnalysisDisplay(type as AnalysisType)}
+                  className="text-gray-400 hover:text-gray-600 text-xs"
+                  title="Masquer"
+                >
+                  ✕
+                </button>
+              </h3>
 
-            {displayData.kind === 'raster' && (
-              <div className="text-xs text-gray-700 space-y-1">
-                <div className="flex justify-between">
-                  <span>Altitude min</span>
-                  <span className="font-medium">{displayData.stats.alt_min} m</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Altitude max</span>
-                  <span className="font-medium">{displayData.stats.alt_max} m</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Altitude moyenne</span>
-                  <span className="font-medium">{displayData.stats.alt_mean} m</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Résolution</span>
-                  <span className="font-medium">{displayData.stats.resolution_m} m</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Dimensions</span>
-                  <span className="font-medium">{displayData.stats.width_px} × {displayData.stats.height_px} px</span>
-                </div>
-              </div>
-            )}
-
-            {displayData.kind === 'vector' && (
-              <div className="text-xs text-gray-700 space-y-1">
-                <div className="flex justify-between">
-                  <span>Entités</span>
-                  <span className="font-medium">{displayData.stats.feature_count}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Type géométrie</span>
-                  <span className="font-medium">{displayData.stats.geometry_type}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Couche</span>
-                  <span className="font-medium">{displayData.layer_name}</span>
-                </div>
-                {displayData.stats.attributes_summary && displayData.stats.attributes_summary.length > 0 && (
-                  <div className="mt-1.5">
-                    <span className="text-gray-500">Attributs :</span>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {displayData.stats.attributes_summary.slice(0, 5).map((attr) => (
-                        <span key={attr} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">
-                          {attr}
-                        </span>
-                      ))}
-                      {displayData.stats.attributes_summary.length > 5 && (
-                        <span className="text-gray-400 text-[10px]">
-                          +{displayData.stats.attributes_summary.length - 5}
-                        </span>
-                      )}
-                    </div>
+              {layerData.kind === 'raster' && (
+                <div className="text-xs text-gray-700 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Altitude min</span>
+                    <span className="font-medium">{layerData.stats.alt_min} m</span>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                  <div className="flex justify-between">
+                    <span>Altitude max</span>
+                    <span className="font-medium">{layerData.stats.alt_max} m</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Altitude moyenne</span>
+                    <span className="font-medium">{layerData.stats.alt_mean} m</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Résolution</span>
+                    <span className="font-medium">{layerData.stats.resolution_m} m</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Dimensions</span>
+                    <span className="font-medium">{layerData.stats.width_px} × {layerData.stats.height_px} px</span>
+                  </div>
+                </div>
+              )}
+
+              {layerData.kind === 'vector' && (
+                <div className="text-xs text-gray-700 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Entités</span>
+                    <span className="font-medium">{layerData.stats.feature_count}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Type géométrie</span>
+                    <span className="font-medium">{layerData.stats.geometry_type}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Couche</span>
+                    <span className="font-medium">{layerData.layer_name}</span>
+                  </div>
+                  {layerData.stats.total_area_ha != null && (
+                    <div className="flex justify-between">
+                      <span>Surface totale</span>
+                      <span className="font-medium">{layerData.stats.total_area_ha.toLocaleString('fr-FR')} ha</span>
+                    </div>
+                  )}
+                  {layerData.stats.total_length_km != null && (
+                    <div className="flex justify-between">
+                      <span>Longueur totale</span>
+                      <span className="font-medium">{layerData.stats.total_length_km.toLocaleString('fr-FR')} km</span>
+                    </div>
+                  )}
+                  {layerData.stats.distribution && Object.keys(layerData.stats.distribution).length > 0 && (
+                    <div className="mt-2">
+                      <span className="text-gray-500 font-medium">Distribution :</span>
+                      <div className="mt-1 max-h-32 overflow-y-auto">
+                        <table className="w-full text-[10px]">
+                          <thead>
+                            <tr className="text-gray-500">
+                              <th className="text-left font-medium pb-0.5">Type</th>
+                              <th className="text-right font-medium pb-0.5">Nb</th>
+                              {Object.values(layerData.stats.distribution).some((v) => v.area_ha != null) && (
+                                <th className="text-right font-medium pb-0.5">Ha</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(layerData.stats.distribution).map(([key, val]) => (
+                              <tr key={key} className="border-t border-gray-100">
+                                <td className="py-0.5 truncate max-w-[100px]" title={key}>{key}</td>
+                                <td className="text-right py-0.5">{val.count}</td>
+                                {val.area_ha != null && (
+                                  <td className="text-right py-0.5">{val.area_ha.toLocaleString('fr-FR')}</td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  {layerData.stats.extra && Object.keys(layerData.stats.extra).length > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      {Object.entries(layerData.stats.extra).map(([k, v]) => (
+                        <div key={k} className="flex justify-between">
+                          <span>{k}</span>
+                          <span className="font-medium">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {/* Instructions */}
         <div className="bg-green-50 border-l-4 p-3" style={{ borderColor: '#61C299' }}>

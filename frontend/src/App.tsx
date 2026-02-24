@@ -112,9 +112,8 @@ function App(): React.ReactNode {
     Record<AnalysisType, AnalysisResult>
   >(initialState.analysisResults);
 
-  const [activeAnalysis, setActiveAnalysis] = useState<AnalysisType | null>(null);
-  const [displayData, setDisplayData] = useState<AnalysisDisplayData | null>(null);
-  const [displayLoading, setDisplayLoading] = useState(false);
+  const [displayLayers, setDisplayLayers] = useState<Record<string, AnalysisDisplayData>>({});
+  const [displayLoading, setDisplayLoading] = useState<AnalysisType | null>(null);
 
   // Save state to localStorage whenever key states change
   useEffect(() => {
@@ -157,55 +156,59 @@ function App(): React.ReactNode {
   }, [rawGeoJson, paddingMeters]);
 
   const handleToggleAnalysisDisplay = async (type: AnalysisType) => {
-    // Toggle off if already active
-    if (activeAnalysis === type) {
-      setActiveAnalysis(null);
-      setDisplayData(null);
+    // Toggle off if already displayed
+    if (displayLayers[type]) {
+      setDisplayLayers((prev) => {
+        const next = { ...prev };
+        delete next[type];
+        return next;
+      });
       return;
     }
 
     const result = analysisResults[type];
     if (result.status !== 'success' || !result.url) return;
 
-    setActiveAnalysis(type);
-    setDisplayLoading(true);
+    setDisplayLoading(type);
 
     try {
       if (type === 'mnt') {
-        // MNT → ask backend for PNG preview
-        const tifPath = result.url; // e.g. "/files/mtn/<id>/mnt.tif"
+        const tifPath = result.url;
         const resp = await fetch(
           `${BASE_API}/mtn/preview?tif_path=${encodeURIComponent(tifPath)}`
         );
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        setDisplayData({
-          kind: 'raster',
-          png_url: `${BASE_API}${data.png_url}`,
-          bounds: data.bounds,
-          stats: data.stats,
-        });
+        setDisplayLayers((prev) => ({
+          ...prev,
+          [type]: {
+            kind: 'raster',
+            png_url: `${BASE_API}${data.png_url}`,
+            bounds: data.bounds,
+            stats: data.stats,
+          },
+        }));
       } else {
-        // Vector → ask backend to convert shapefile ZIP to GeoJSON
         const zipUrl = result.url;
         const resp = await fetch(
-          `${BASE_API}/shapefile/geojson?zip_url=${encodeURIComponent(zipUrl)}`
+          `${BASE_API}/shapefile/geojson?zip_url=${encodeURIComponent(zipUrl)}&analysis_type=${encodeURIComponent(type)}`
         );
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        setDisplayData({
-          kind: 'vector',
-          geojson: data.geojson,
-          stats: data.stats,
-          layer_name: data.layer_name,
-        });
+        setDisplayLayers((prev) => ({
+          ...prev,
+          [type]: {
+            kind: 'vector',
+            geojson: data.geojson,
+            stats: data.stats,
+            layer_name: data.layer_name,
+          },
+        }));
       }
     } catch (err) {
       console.error('Failed to load preview:', err);
-      setActiveAnalysis(null);
-      setDisplayData(null);
     } finally {
-      setDisplayLoading(false);
+      setDisplayLoading(null);
     }
   };
 
@@ -214,8 +217,8 @@ function App(): React.ReactNode {
     setGeoJsonFileName(null);
     setZoneError(null);
     setZone(null);
-    setActiveAnalysis(null);
-    setDisplayData(null);
+    setDisplayLayers({});
+    setDisplayLoading(null);
     setAnalysisResults((prev) => {
       const reset: Record<AnalysisType, AnalysisResult> = { ...prev };
       ANALYSIS_OPTIONS.forEach((opt) => {
@@ -234,8 +237,8 @@ function App(): React.ReactNode {
   const handleGeoJsonFileSelected = async (file: File) => {
     setZoneError(null);
     setGeoJsonFileName(file.name);
-    setActiveAnalysis(null);
-    setDisplayData(null);
+    setDisplayLayers({});
+    setDisplayLoading(null);
 
     // Reset analysis results when a new GeoJSON is uploaded
     setAnalysisResults({
@@ -374,8 +377,7 @@ function App(): React.ReactNode {
         onSelectedAnalysesChange={setSelectedAnalyses}
         analysisResults={analysisResults}
         onRunSelectedAnalyses={runSelectedAnalyses}
-        activeAnalysis={activeAnalysis}
-        displayData={displayData}
+        displayLayers={displayLayers}
         displayLoading={displayLoading}
         onToggleAnalysisDisplay={handleToggleAnalysisDisplay}
       />
@@ -387,8 +389,7 @@ function App(): React.ReactNode {
           paddedBoundsWgs84={zone?.stats.bboxWgs84Padded ?? null}
           analysisResults={analysisResults}
           zoneStats={zone?.stats ?? null}
-          activeAnalysis={activeAnalysis}
-          displayData={displayData}
+          displayLayers={displayLayers}
         />
       </div>
     </div>

@@ -41,8 +41,7 @@ interface MapComponentProps {
   paddedBoundsWgs84: Wgs84Bounds | null;
   analysisResults: Record<AnalysisType, AnalysisResult>;
   zoneStats: ZoneStats | null;
-  activeAnalysis: AnalysisType | null;
-  displayData: AnalysisDisplayData | null;
+  displayLayers: Record<string, AnalysisDisplayData>;
 }
 
 interface ZoneLayersProps {
@@ -227,8 +226,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   paddedBoundsWgs84,
   analysisResults,
   zoneStats,
-  activeAnalysis,
-  displayData,
+  displayLayers,
 }) => {
   return (
     <div className="relative w-full h-full">
@@ -251,12 +249,13 @@ export const MapComponent: React.FC<MapComponentProps> = ({
           zoneStats={zoneStats}
         />
 
-        {activeAnalysis && displayData && (
+        {Object.entries(displayLayers).map(([type, data]) => (
           <AnalysisLayer
-            activeAnalysis={activeAnalysis}
-            displayData={displayData}
+            key={type}
+            activeAnalysis={type as AnalysisType}
+            displayData={data}
           />
-        )}
+        ))}
       </MapContainer>
     </div>
   );
