@@ -19,6 +19,9 @@ hackathon-sia-2026/
 │   │   ├── preview.py             # Conversion raster → PNG, shapefile → GeoJSON
 │   │   ├── saga_compare.py        # Comparaison de rasters SAGA (.sg-grd-z)
 │   │   └── summary_automation.py  # Synthèse IA via AWS Bedrock
+│   ├── examples_geojson/  # Fichiers GeoJSON d'exemple pour tester l'application
+│   │   ├── zone_etude.geojson
+│   │   └── parcelles_audeville.geojson
 │   ├── outputs/           # Fichiers générés (servis via /files)
 │   ├── tmp/               # Uploads temporaires (nettoyés automatiquement)
 │   ├── requirements.txt
