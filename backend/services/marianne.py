@@ -184,7 +184,7 @@ def _resolve_department_code(
 
 
 def _department_code_from_bdtopo(input_path: str | Path, x: float, y: float) -> str:
-    del input_path  # garde la signature explicite; non utilise ici
+    del input_path 
     delta = 10.0
     base_params = {
         "SERVICE": "WFS",
@@ -349,22 +349,17 @@ def _distance_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
 
 
 def _extract_order_id(payload: Any) -> str:
-    # 1. Si Météo-France renvoie directement l'ID sous forme de texte ou de nombre simple
     if isinstance(payload, (str, int)):
         return str(payload).strip()
 
-    # 2. Si c'est un dictionnaire (JSON)
     if isinstance(payload, dict):
-        # Toutes les clés historiquement utilisées par MF
         cles_possibles = ("return", "id-cmde", "idCmde", "id_commande", "numeroDemande", "id")
         
-        # On cherche d'abord au premier niveau
         for key in cles_possibles:
             val = payload.get(key)
             if val is not None and str(val).strip():
                 return str(val).strip()
                 
-        # On cherche ensuite au second niveau (s'ils l'ont caché dans un sous-objet)
         for sous_structure in payload.values():
             if isinstance(sous_structure, dict):
                 for key in cles_possibles:
@@ -372,7 +367,6 @@ def _extract_order_id(payload: Any) -> str:
                     if val is not None and str(val).strip():
                         return str(val).strip()
 
-    # 3. Si on n'a vraiment rien trouvé, on fait crasher MAIS en affichant ce qu'on a reçu !
     raise RuntimeError(f"Identifiant de commande introuvable. Météo-France a renvoyé : {payload}")
 
 def _download_csv(order_id: str, api_key: str) -> str:
@@ -397,7 +391,6 @@ def _download_csv(order_id: str, api_key: str) -> str:
     raise RuntimeError(f"Commande {order_id} non prete.")
 
 def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
-    # 1. Nettoyer les lignes vides ou les métadonnées (qui commencent par #)
     lignes_propres = [ligne for ligne in csv_text.splitlines() if ligne.strip() and not ligne.startswith("#")]
     
     reader = csv.DictReader(lignes_propres, delimiter=";")
@@ -406,10 +399,8 @@ def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
 
     lowered = {name: name.strip().lower() for name in reader.fieldnames}
     
-    # 2. LA CORRECTION : Chercher 'aaaa' car Météo-France appelle la colonne "AAAAMMJJ"
     date_col = next((name for name, low in lowered.items() if "date" in low or "aaaa" in low or "jour" in low), None)
     
-    # La colonne des pluies s'appelle généralement "RR" chez Météo-France
     rain_col = next(
         (name for name, low in lowered.items() if "rr" in low or "precip" in low or "cumul" in low),
         None,
@@ -424,11 +415,9 @@ def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
         raw_date = str(row.get(date_col, "")).strip()
         raw_rain = str(row.get(rain_col, "")).strip().lower()
         
-        # Ignorer les données manquantes (MQ = Manquant)
         if not raw_date or not raw_rain or raw_rain in {"mq", "nan", "null"}:
             continue
             
-        # Gérer les traces de précipitations
         if raw_rain in {"tr", "trace"}:
             rain = 0.0
         else:
@@ -438,7 +427,6 @@ def _parse_monthly_totals(csv_text: str) -> dict[int, float]:
                 continue
 
         month = None
-        # Météo-France renvoie souvent le format YYYYMMDD (ex: 20160523)
         for token in (raw_date, raw_date[:10]):
             for fmt in ("%Y-%m-%d", "%Y%m%d", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S"):
                 try:

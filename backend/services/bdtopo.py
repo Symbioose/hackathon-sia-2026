@@ -6,24 +6,20 @@ import xml.etree.ElementTree as ET
 from zipfile import BadZipFile, ZipFile
 
 import requests
-import shapefile  # pip install pyshp
+import shapefile 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 try:
-    # Cas standard: import depuis la racine du projet.
     from backend.services.mtn import get_emprise
 except ModuleNotFoundError:
     try:
-        # Cas app locale: execution depuis backend.
         from services.mtn import get_emprise
     except ModuleNotFoundError:
-        # Cas script local: execution depuis backend/services.
         from mtn import get_emprise
 
 HTTP_CONNECT_TIMEOUT = 10
 
-# J'ai retiré RPG_2024 car l'IGN ne le sert pas sous ce nom sur ce serveur WFS.
 BDTOPO_OCCUPATION_LAYERS: dict[str, str] = {
     "BATIMENT": "BDTOPO_V3:batiment",
     "CIMETIERE": "BDTOPO_V3:cimetiere",
@@ -34,7 +30,6 @@ BDTOPO_OCCUPATION_LAYERS: dict[str, str] = {
     "ZONE_DE_VEGETATION": "BDTOPO_V3:zone_de_vegetation",
 }
 
-# Ta nomenclature métier parfaite (Land Use)
 CODE_LU_DEFAULT: dict[str, int] = {
     "BATIMENT": 14,
     "CIMETIERE": 13,
@@ -212,7 +207,7 @@ def _set_code_lu_field(shp_path: Path, code_lu: int) -> None:
     tmp_base = shp_path.with_name(f"{shp_path.stem}_tmp")
 
     try:
-        original_fields = reader.fields[1:]  # on ignore le DeletionFlag
+        original_fields = reader.fields[1:]
         field_names = [f[0] for f in original_fields]
         has_code_lu = "CODE_LU" in field_names
         code_idx = field_names.index("CODE_LU") if has_code_lu else -1

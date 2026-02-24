@@ -11,14 +11,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 try:
-    # Cas standard: import depuis la racine du projet.
     from backend.services.mtn import get_emprise
 except ModuleNotFoundError:
     try:
-        # Cas app locale: execution depuis backend.
         from services.mtn import get_emprise
     except ModuleNotFoundError:
-        # Cas script local: execution depuis backend/services.
         from mtn import get_emprise
 
 
@@ -26,7 +23,6 @@ HTTP_CONNECT_TIMEOUT = 10
 DEFAULT_SANDRE_WFS = "https://services.sandre.eaufrance.fr/geo/topage2024"
 DEFAULT_GEOPF_WFS = "https://data.geopf.fr/wfs/ows"
 
-# CORRECTION : On met les vraies couches Topage ici (et non BDTOPO)
 BDTOPAGE_DEFAULT_LAYERS = [
     "TronconHydrographique_FXX_Topage2024",
     "SurfaceHydrographique_FXX_Topage2024",
@@ -137,7 +133,6 @@ def fetch_bdtopage_shapefile_by_emprise(
         last_error = f"Aucun .shp trouve apres extraction de {zip_path}"
         zip_path.unlink(missing_ok=True)
 
-    # Si on arrive ici, tous les formats ont échoué. On affiche la vraie erreur du Sandre !
     raise RuntimeError(f"Echec WFS SHP pour {layer_name}. Dernière erreur Sandre :\n{last_error[:500]}")
 
 
@@ -180,12 +175,11 @@ def fetch_bdtopage_layers_shapefiles_by_emprise(
     return {"layers": downloaded, "skipped": skipped}
 
 
-# Compat: on garde les anciens noms appeles dans ton terminal.
-def fetch_bdtopage_geopackage_by_emprise(*args, **kwargs):  # type: ignore[no-untyped-def]
+def fetch_bdtopage_geopackage_by_emprise(*args, **kwargs):
     return fetch_bdtopage_shapefile_by_emprise(*args, **kwargs)
 
 
-def fetch_bdtopage_layers_geopackages_by_emprise(*args, **kwargs):  # type: ignore[no-untyped-def]
+def fetch_bdtopage_layers_geopackages_by_emprise(*args, **kwargs): 
     return fetch_bdtopage_layers_shapefiles_by_emprise(*args, **kwargs)
 
 
