@@ -172,13 +172,13 @@ def mtn_preview(tif_path: str) -> dict:
 
 
 @app.get("/shapefile/geojson")
-def shapefile_to_geojson(zip_url: str) -> dict:
-    """Convert a shapefile ZIP to GeoJSON (WGS84) with stats."""
+def shapefile_to_geojson(zip_url: str, analysis_type: str | None = None) -> dict:
+    """Convert a shapefile ZIP to GeoJSON (WGS84) with domain-specific stats."""
     resolved = OUTPUTS_DIR / zip_url.lstrip("/").removeprefix("files/")
     if not resolved.exists():
         raise HTTPException(status_code=404, detail=f"ZIP not found: {zip_url}")
     try:
-        result = shapefile_zip_to_geojson(resolved)
+        result = shapefile_zip_to_geojson(resolved, analysis_type=analysis_type)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
