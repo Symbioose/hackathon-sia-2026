@@ -22,6 +22,7 @@ from services.bdtopo import (
 from services.marianne import fetch_monthly_rainfall_average_last_ten_years_from_geojson
 from services.mtn import get_emprise, telecharger_tif_lambert
 from services.rpg import RPG_DEFAULT_LAYER, fetch_rpg_shapefile_by_emprise
+from services.preview import generate_mnt_preview, shapefile_zip_to_geojson
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -148,6 +149,42 @@ def mtn_download(
         "bbox": bbox,
         "tif_path": str(out_tif),
         "download_url": f"/files/mtn/{run_id}/mnt.tif",
+    }
+
+
+@app.get("/mtn/preview")
+def mtn_preview(tif_path: str) -> dict:
+    """Generate a PNG preview + stats for a MNT GeoTIFF."""
+    resolved = OUTPUTS_DIR / tif_path.lstrip("/").removeprefix("files/")
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail=f"TIF not found: {tif_path}")
+    try:
+        result = generate_mnt_preview(resolved)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Build a URL for the generated PNG
+    png_rel = Path(result["png_path"]).relative_to(OUTPUTS_DIR)
+    return {
+        "png_url": f"/files/{png_rel}",
+        "bounds": result["bounds_wgs84"],
+        "stats": result["stats"],
+    }
+
+
+@app.get("/shapefile/geojson")
+def shapefile_to_geojson(zip_url: str, analysis_type: str | None = None) -> dict:
+    """Convert a shapefile ZIP to GeoJSON (WGS84) with domain-specific stats."""
+    resolved = OUTPUTS_DIR / zip_url.lstrip("/").removeprefix("files/")
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail=f"ZIP not found: {zip_url}")
+    try:
+        result = shapefile_zip_to_geojson(resolved, analysis_type=analysis_type)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "geojson": result["geojson"],
+        "stats": result["stats"],
+        "layer_name": result["layer_name"],
     }
 
 

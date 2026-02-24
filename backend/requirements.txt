@@ -5,4 +5,5 @@ requests>=2.31
 pyshp>=2.3.1
 rasterio
 matplotlib
+pyproj
 dotenv
