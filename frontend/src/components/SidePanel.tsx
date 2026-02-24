@@ -20,7 +20,12 @@ const Spinner: React.FC<{ className?: string }> = ({ className = 'h-4 w-4' }) =>
   </svg>
 );
 
+type AppTab = 'analyse' | 'comparaison';
+
 interface SidePanelProps {
+  activeTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
+
   paddingMeters: ZonePadding;
   onPaddingMetersChange: (padding: ZonePadding) => void;
 
@@ -42,6 +47,8 @@ interface SidePanelProps {
 }
 
 export const SidePanel: React.FC<SidePanelProps> = ({
+  activeTab,
+  onTabChange,
   paddingMeters,
   onPaddingMetersChange,
   geoJsonFileName,
@@ -127,16 +134,42 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     <div className="w-80 bg-white shadow-lg flex flex-col h-full">
       {/* Header */}
       <div style={{ backgroundColor: '#61C299' }} className="text-white p-4">
-        <div className="flex gap-3 mb-2">
+        <div className="flex gap-3 mb-3">
           <img src={DesignerLogo} alt="OSAI Logo" className="w-1/4 object-contain" />
           <div className="flex flex-col justify-center">
             <h1 className="text-2xl font-bold">OSAI</h1>
             <p className="text-sm opacity-90">Ombrea Soil Analytics AI</p>
           </div>
         </div>
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 bg-white/20 rounded-lg p-1">
+          {([
+            { key: 'analyse',     label: 'Analyse' },
+            { key: 'comparaison', label: 'Comparaison' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => onTabChange(tab.key)}
+              className="flex-1 py-1.5 rounded-md text-xs font-semibold transition"
+              style={{
+                backgroundColor: activeTab === tab.key ? 'white' : 'transparent',
+                color: activeTab === tab.key ? '#61C299' : 'rgba(255,255,255,0.85)',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Content */}
+      {/* Content — only shown on Analyse tab */}
+      {activeTab === 'comparaison' && (
+        <div className="flex-1 flex items-center justify-center text-xs text-gray-400 px-4 text-center">
+          Sélectionnez vos fichiers CSV dans le panneau principal pour comparer deux scénarios.
+        </div>
+      )}
+      {activeTab === 'analyse' && (
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* GeoJSON Zone Section */}
         <div>
@@ -463,6 +496,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           </ol>
         </div>
       </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-gray-200 p-4 bg-gray-50">
