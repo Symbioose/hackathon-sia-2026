@@ -7,9 +7,9 @@ type FileKey = 'infiltration' | 'interrill_erosion' | 'rill_erosion' | 'surface_
 
 const FILE_SLOTS: { key: FileKey; label: string; icon: string }[] = [
   { key: 'infiltration',      label: 'Infiltration',       icon: '💧' },
-  { key: 'interrill_erosion', label: 'Érosion diffuse',    icon: '🌱' },
-  { key: 'rill_erosion',      label: 'Érosion concentrée', icon: '🪨' },
-  { key: 'surface_runoff',    label: 'Ruissellement',      icon: '🌊' },
+  { key: 'interrill_erosion', label: 'interrill_erosion',    icon: '🌱' },
+  { key: 'rill_erosion',      label: 'rill_erosion ', icon: '🪨' },
+  { key: 'surface_runoff',    label: 'surface_runoff',      icon: '🌊' },
 ];
 
 type ScenarioFiles = Record<FileKey, File | null>;
