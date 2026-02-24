@@ -409,7 +409,7 @@ function App(): React.ReactNode {
             displayLayers={displayLayers}
           />
         ) : (
-          <ComparisonPanel />
+          <ComparisonPanel rawGeoJson={rawGeoJson} />
         )}
       </div>
     </div>

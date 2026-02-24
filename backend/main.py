@@ -364,29 +364,61 @@ def _compute_marianne_monthly_average(
 
 @app.post("/scenarios/compare")
 def scenarios_compare(
-    zone_file: UploadFile = File(...),
-    scenario1_dir: str = Form("/Users/macbook/Downloads/scenario1"),
-    scenario2_dir: str = Form("/Users/macbook/Downloads/scenario2"),
+    zone_file: UploadFile | None = File(None),
+    scenario1_infiltration: UploadFile = File(...),
+    scenario1_interrill_erosion: UploadFile = File(...),
+    scenario1_rill_erosion: UploadFile = File(...),
+    scenario1_surface_runoff: UploadFile = File(...),
+    scenario2_infiltration: UploadFile = File(...),
+    scenario2_interrill_erosion: UploadFile = File(...),
+    scenario2_rill_erosion: UploadFile = File(...),
+    scenario2_surface_runoff: UploadFile = File(...),
 ) -> dict:
-    """Compare two SAGA scenario raster sets, clipped to zone polygon."""
-    zone_path = _save_upload(zone_file)
+    """Compare two SAGA scenario raster sets, clipped to an optional zone polygon."""
+    scenario_uploads: dict[str, tuple[UploadFile, UploadFile]] = {
+        "infiltration":      (scenario1_infiltration,      scenario2_infiltration),
+        "interrill_erosion": (scenario1_interrill_erosion, scenario2_interrill_erosion),
+        "rill_erosion":      (scenario1_rill_erosion,      scenario2_rill_erosion),
+        "surface_runoff":    (scenario1_surface_runoff,    scenario2_surface_runoff),
+    }
+
     run_id = uuid4().hex
     out_dir = OUTPUTS_DIR / "scenarios" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    tmp_dir1 = TMP_DIR / f"s1_{run_id}"
+    tmp_dir2 = TMP_DIR / f"s2_{run_id}"
+    tmp_dir1.mkdir(parents=True, exist_ok=True)
+    tmp_dir2.mkdir(parents=True, exist_ok=True)
+
+    zone_path: Path | None = None
+    if zone_file is not None:
+        zone_path = _save_upload(zone_file)
+
     try:
+        # Save each uploaded raster to its scenario temp directory
+        for name, (upload1, upload2) in scenario_uploads.items():
+            dest1 = tmp_dir1 / f"{name}.sg-grd-z"
+            dest2 = tmp_dir2 / f"{name}.sg-grd-z"
+            with dest1.open("wb") as f:
+                shutil.copyfileobj(upload1.file, f)
+            with dest2.open("wb") as f:
+                shutil.copyfileobj(upload2.file, f)
+
         result = compute_scenario_diff(
-            scenario1_dir=Path(scenario1_dir),
-            scenario2_dir=Path(scenario2_dir),
+            scenario1_dir=tmp_dir1,
+            scenario2_dir=tmp_dir2,
             zone_geojson_path=zone_path,
             output_dir=out_dir,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
-        _cleanup_upload(zone_file, zone_path)
+        if zone_path is not None and zone_file is not None:
+            _cleanup_upload(zone_file, zone_path)
+        shutil.rmtree(tmp_dir1, ignore_errors=True)
+        shutil.rmtree(tmp_dir2, ignore_errors=True)
 
-    # Build URLs from PNGs already written to out_dir
     diff_preview_urls: dict[str, str] = {}
     for name, png_path in result.get("diff_png_paths", {}).items():
         diff_preview_urls[name] = f"/files/scenarios/{run_id}/{Path(png_path).name}"

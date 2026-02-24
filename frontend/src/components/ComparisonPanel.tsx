@@ -3,13 +3,13 @@ import { BASE_API } from '../config';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type FileKey = 'infiltration' | 'surface_runoff' | 'interrill_erosion' | 'rill_erosion';
+type FileKey = 'infiltration' | 'interrill_erosion' | 'rill_erosion' | 'surface_runoff';
 
 const FILE_SLOTS: { key: FileKey; label: string; icon: string }[] = [
-  { key: 'infiltration',       label: 'Infiltration',      icon: '💧' },
-  { key: 'surface_runoff',     label: 'Surface Runoff',    icon: '🌊' },
-  { key: 'interrill_erosion',  label: 'Interrill Erosion', icon: '🌱' },
-  { key: 'rill_erosion',       label: 'Rill Erosion',      icon: '🪨' },
+  { key: 'infiltration',      label: 'Infiltration',       icon: '💧' },
+  { key: 'interrill_erosion', label: 'Interrill_erosion',    icon: '🌱' },
+  { key: 'rill_erosion',      label: 'Rrill_erosion', icon: '🪨' },
+  { key: 'surface_runoff',    label: 'Surface_runoff',      icon: '🌊' },
 ];
 
 type ScenarioFiles = Record<FileKey, File | null>;
@@ -17,17 +17,23 @@ type ScenarioFiles = Record<FileKey, File | null>;
 const emptyScenario = (): ScenarioFiles =>
   Object.fromEntries(FILE_SLOTS.map((s) => [s.key, null])) as ScenarioFiles;
 
-interface SynthesisRow {
-  metric: string;
-  scenario_a: number | null;
-  scenario_b: number | null;
-  delta: number | null;
-  delta_percent: number | null;
+interface RasterTotal {
+  scenario1_sum: number;
+  scenario2_sum: number;
+  pct_change: number;
+}
+
+interface RasterResult {
+  label: string;
+  parcelles: { id: string; scenario1_sum: number; scenario2_sum: number; pct_change: number }[];
+  total: RasterTotal;
 }
 
 interface ComparisonResult {
-  download_url: string;
-  synthesis: SynthesisRow[];
+  rasters: Record<string, RasterResult>;
+  parcelle_ids: string[];
+  bounds_wgs84: { south: number; west: number; north: number; east: number };
+  diff_preview_urls: Record<string, string>;
 }
 
 // ── DropZone ───────────────────────────────────────────────────────────────────
@@ -51,8 +57,6 @@ const DropZone: React.FC<{
     [onFile],
   );
 
-  const hasFile = file !== null;
-
   return (
     <div
       onClick={() => inputRef.current?.click()}
@@ -61,14 +65,14 @@ const DropZone: React.FC<{
       onDrop={handleDrop}
       className="border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all select-none"
       style={{
-        borderColor: hasFile ? '#61C299' : dragging ? '#61C299' : '#d1d5db',
-        backgroundColor: hasFile ? '#f0faf5' : dragging ? '#f0faf5' : '#f9fafb',
+        borderColor: file ? '#61C299' : dragging ? '#61C299' : '#d1d5db',
+        backgroundColor: file ? '#f0faf5' : dragging ? '#f0faf5' : '#f9fafb',
       }}
     >
       <input
         ref={inputRef}
         type="file"
-        accept=".csv"
+        accept=".sg-grd-z,.zip"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -80,26 +84,15 @@ const DropZone: React.FC<{
         <span className="text-xl">{icon}</span>
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-gray-600">{label}</div>
-          {hasFile ? (
-            <div
-              className="text-xs font-medium truncate mt-0.5"
-              style={{ color: '#61C299' }}
-              title={file.name}
-            >
+          {file ? (
+            <div className="text-xs font-medium truncate mt-0.5" style={{ color: '#61C299' }} title={file.name}>
               {file.name}
             </div>
           ) : (
-            <div className="text-xs text-gray-400 mt-0.5">Déposer ou cliquer pour importer</div>
+            <div className="text-xs text-gray-400 mt-0.5">Déposer .sg-grd-z ou cliquer</div>
           )}
         </div>
-        {hasFile && (
-          <div
-            className="shrink-0 text-xs font-bold"
-            style={{ color: '#61C299' }}
-          >
-            ✓
-          </div>
-        )}
+        {file && <span className="text-xs font-bold shrink-0" style={{ color: '#61C299' }}>✓</span>}
       </div>
     </div>
   );
@@ -113,8 +106,7 @@ const ScenarioCard: React.FC<{
   files: ScenarioFiles;
   onFile: (key: FileKey, file: File) => void;
 }> = ({ label, color, files, onFile }) => {
-  const filledCount = FILE_SLOTS.filter((s) => files[s.key] !== null).length;
-
+  const filled = FILE_SLOTS.filter((s) => files[s.key] !== null).length;
   return (
     <div className="flex-1 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -122,18 +114,15 @@ const ScenarioCard: React.FC<{
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
           <h3 className="font-semibold text-gray-800">{label}</h3>
         </div>
-        <span className="text-xs text-gray-400">
-          {filledCount}/{FILE_SLOTS.length} fichiers
-        </span>
+        <span className="text-xs text-gray-400">{filled}/{FILE_SLOTS.length} fichiers</span>
       </div>
-
       {FILE_SLOTS.map((slot) => (
         <DropZone
           key={slot.key}
           icon={slot.icon}
           label={slot.label}
           file={files[slot.key]}
-          onFile={(file) => onFile(slot.key, file)}
+          onFile={(f) => onFile(slot.key, f)}
         />
       ))}
     </div>
@@ -149,68 +138,23 @@ const Spinner: React.FC = () => (
   </svg>
 );
 
-// ── SynthesisTable ─────────────────────────────────────────────────────────────
-
-const SynthesisTable: React.FC<{ rows: SynthesisRow[] }> = ({ rows }) => (
-  <div className="overflow-x-auto">
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-xs text-gray-500 border-b border-gray-100">
-          <th className="text-left pb-2 font-semibold">Métrique</th>
-          <th className="text-right pb-2 font-semibold">Scénario A</th>
-          <th className="text-right pb-2 font-semibold">Scénario B</th>
-          <th className="text-right pb-2 font-semibold">Delta</th>
-          <th className="text-right pb-2 font-semibold">Δ%</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, i) => {
-          const isNeg = row.delta != null && row.delta < 0;
-          const isPos = row.delta != null && row.delta > 0;
-          const deltaClass = isNeg ? 'text-green-600' : isPos ? 'text-red-500' : 'text-gray-400';
-
-          return (
-            <tr key={i} className="border-t border-gray-50 hover:bg-gray-50 transition-colors">
-              <td className="py-2 text-gray-700 font-medium">{row.metric}</td>
-              <td className="py-2 text-right text-gray-600">{row.scenario_a ?? '—'}</td>
-              <td className="py-2 text-right text-gray-600">{row.scenario_b ?? '—'}</td>
-              <td className={`py-2 text-right font-semibold ${deltaClass}`}>
-                {row.delta != null
-                  ? `${row.delta > 0 ? '+' : ''}${row.delta}`
-                  : '—'}
-              </td>
-              <td className={`py-2 text-right font-semibold ${deltaClass}`}>
-                {row.delta_percent != null
-                  ? `${row.delta_percent > 0 ? '+' : ''}${row.delta_percent}%`
-                  : '—'}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  </div>
-);
-
 // ── ComparisonPanel ────────────────────────────────────────────────────────────
 
-export const ComparisonPanel: React.FC = () => {
+export const ComparisonPanel: React.FC<{
+  rawGeoJson: Record<string, unknown> | null;
+}> = ({ rawGeoJson }) => {
   const [scenarioA, setScenarioA] = useState<ScenarioFiles>(emptyScenario());
   const [scenarioB, setScenarioB] = useState<ScenarioFiles>(emptyScenario());
   const [loading, setLoading]     = useState(false);
   const [result, setResult]       = useState<ComparisonResult | null>(null);
   const [error, setError]         = useState<string | null>(null);
 
-  const setFileA = useCallback((key: FileKey, file: File) => {
-    setScenarioA((prev) => ({ ...prev, [key]: file }));
-  }, []);
-  const setFileB = useCallback((key: FileKey, file: File) => {
-    setScenarioB((prev) => ({ ...prev, [key]: file }));
-  }, []);
+  const setFileA = useCallback((key: FileKey, file: File) => setScenarioA((p) => ({ ...p, [key]: file })), []);
+  const setFileB = useCallback((key: FileKey, file: File) => setScenarioB((p) => ({ ...p, [key]: file })), []);
 
   const canCompare =
-    FILE_SLOTS.some((s) => scenarioA[s.key] !== null) &&
-    FILE_SLOTS.some((s) => scenarioB[s.key] !== null);
+    FILE_SLOTS.every((s) => scenarioA[s.key] !== null) &&
+    FILE_SLOTS.every((s) => scenarioB[s.key] !== null);
 
   const handleCompare = async () => {
     setLoading(true);
@@ -219,20 +163,29 @@ export const ComparisonPanel: React.FC = () => {
 
     try {
       const formData = new FormData();
+
+      // Optional zone file from tab 1
+      if (rawGeoJson) {
+        formData.append(
+          'zone_file',
+          new Blob([JSON.stringify(rawGeoJson)], { type: 'application/geo+json' }),
+          'zone.geojson',
+        );
+      }
+
+      // 4 raster files per scenario
       FILE_SLOTS.forEach((slot) => {
-        if (scenarioA[slot.key]) formData.append(`scenario_a_${slot.key}`, scenarioA[slot.key]!);
-        if (scenarioB[slot.key]) formData.append(`scenario_b_${slot.key}`, scenarioB[slot.key]!);
+        formData.append(`scenario1_${slot.key}`, scenarioA[slot.key]!);
+        formData.append(`scenario2_${slot.key}`, scenarioB[slot.key]!);
       });
 
-      const response = await fetch(`${BASE_API}/comparison/compute`, {
+      const response = await fetch(`${BASE_API}/scenarios/compare`, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-
-      const data = (await response.json()) as ComparisonResult;
-      setResult(data);
+      setResult((await response.json()) as ComparisonResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la comparaison');
     } finally {
@@ -240,23 +193,35 @@ export const ComparisonPanel: React.FC = () => {
     }
   };
 
-  const handleDownloadSynthesis = () => {
-    if (!result?.synthesis) return;
+  const fmtNum = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 5 });
+  const fmtPct = (n: number) => `${n > 0 ? '+' : ''}${n}%`;
 
-    const headers = ['Métrique', 'Scénario A', 'Scénario B', 'Delta', 'Delta (%)'];
-    const rows = result.synthesis.map((r) => [
-      r.metric,
-      r.scenario_a ?? '',
-      r.scenario_b ?? '',
-      r.delta ?? '',
-      r.delta_percent != null ? `${r.delta_percent}%` : '',
-    ]);
+  const handleDownloadSynthesis = () => {
+    if (!result) return;
+    const headers = ['Variable', 'ID Parcelle/Point', 'Scenario 1', 'Scenario 2', 'Différence'];
+    const rows: string[][] = [];
+
+    Object.values(result.rasters).forEach((r) => {
+      r.parcelles.forEach((p, i) => {
+        rows.push([
+          i === 0 ? r.label : '',   // Variable only on first row
+          p.id || '—',
+          fmtNum(p.scenario1_sum),
+          fmtNum(p.scenario2_sum),
+          fmtPct(p.pct_change),
+        ]);
+      });
+      // Total surface row
+      rows.push(['', 'Total surface', fmtNum(r.total.scenario1_sum), fmtNum(r.total.scenario2_sum), fmtPct(r.total.pct_change)]);
+      rows.push([]); // blank separator between variables
+    });
+
     const csv = [headers, ...rows].map((r) => r.join(';')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'synthese_comparaison.csv';
+    a.download = 'comparaison_detaillee.csv';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -269,24 +234,17 @@ export const ComparisonPanel: React.FC = () => {
         <div>
           <h2 className="text-lg font-bold text-gray-800">Comparaison de scénarios</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Importez les fichiers CSV de chaque scénario et lancez la comparaison.
+            Importez les fichiers SAGA (.sg-grd-z) de chaque scénario et lancez la comparaison.
+            {rawGeoJson
+              ? ' La zone de l\'onglet Analyse sera utilisée pour le masquage.'
+              : ' Chargez une zone dans l\'onglet Analyse pour obtenir des statistiques par parcelle.'}
           </p>
         </div>
 
         {/* Scenario cards */}
         <div className="flex gap-4">
-          <ScenarioCard
-            label="Scénario A"
-            color="#61C299"
-            files={scenarioA}
-            onFile={setFileA}
-          />
-          <ScenarioCard
-            label="Scénario B"
-            color="#3b82f6"
-            files={scenarioB}
-            onFile={setFileB}
-          />
+          <ScenarioCard label="Scénario 1" color="#61C299" files={scenarioA} onFile={setFileA} />
+          <ScenarioCard label="Scénario 2" color="#3b82f6" files={scenarioB} onFile={setFileB} />
         </div>
 
         {/* Compare button */}
@@ -310,38 +268,98 @@ export const ComparisonPanel: React.FC = () => {
         {/* Results */}
         {result && (
           <div className="space-y-4">
-            {/* Download buttons */}
-            <div className="flex gap-3">
-              <a
-                href={`${BASE_API}${result.download_url}`}
-                download
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-center border-2 transition hover:bg-green-50"
-                style={{ borderColor: '#61C299', color: '#61C299' }}
-              >
-                ↓ Télécharger le CSV résultat
-              </a>
-              <button
-                onClick={handleDownloadSynthesis}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition hover:bg-green-50"
-                style={{ borderColor: '#61C299', color: '#61C299' }}
-              >
-                ↓ Télécharger la synthèse
-              </button>
+
+            {/* Diff preview images */}
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(result.diff_preview_urls).map(([name, url]) => {
+                const label = result.rasters[name]?.label ?? name;
+                return (
+                  <div key={name} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-700">
+                      {label}
+                    </div>
+                    <img
+                      src={`${BASE_API}${url}`}
+                      alt={label}
+                      className="w-full object-contain"
+                      style={{ maxHeight: '180px' }}
+                    />
+                    <div className="px-3 py-1.5 flex justify-between text-xs text-gray-500">
+                      <span className="text-blue-500">■ Augmentation</span>
+                      <span className="text-red-500">■ Diminution</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Synthesis bubble */}
-            <div
-              className="bg-white border-2 rounded-2xl p-5 shadow-sm"
-              style={{ borderColor: '#61C299' }}
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#61C299' }} />
-                <h3 className="font-semibold text-gray-800">Synthèse comparative</h3>
-                <span className="ml-auto text-xs text-gray-400">
-                  {result.synthesis.length} métriques
-                </span>
+            <div className="bg-white border-2 rounded-2xl p-5 shadow-sm" style={{ borderColor: '#61C299' }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#61C299' }} />
+                  <h3 className="font-semibold text-gray-800">Synthèse comparative</h3>
+                </div>
+                <button
+                  onClick={handleDownloadSynthesis}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 transition hover:bg-green-50"
+                  style={{ borderColor: '#61C299', color: '#61C299' }}
+                >
+                  ↓ Télécharger CSV
+                </button>
               </div>
-              <SynthesisTable rows={result.synthesis} />
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="text-xs text-gray-500 border-b-2 border-gray-200">
+                      <th className="text-left py-2 pr-4 font-semibold">Variable</th>
+                      <th className="text-left py-2 pr-4 font-semibold">ID Parcelle/Point</th>
+                      <th className="text-right py-2 pr-4 font-semibold">Scénario 1</th>
+                      <th className="text-right py-2 pr-4 font-semibold">Scénario 2</th>
+                      <th className="text-right py-2 font-semibold">Différence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(result.rasters).map(([key, r]) => {
+                      const parcelleRows = r.parcelles;
+                      const rowCount = parcelleRows.length + 1; // parcelles + total
+                      return (
+                        <>
+                          {parcelleRows.map((p, i) => (
+                            <tr key={`${key}-${p.id}`} className="border-t border-gray-100 hover:bg-gray-50">
+                              {i === 0 && (
+                                <td
+                                  rowSpan={rowCount}
+                                  className="py-1.5 pr-4 font-bold text-gray-800 align-top pt-2"
+                                  style={{ borderTop: i === 0 ? '2px solid #e5e7eb' : undefined }}
+                                >
+                                  {r.label}
+                                </td>
+                              )}
+                              <td className="py-1.5 pr-4 text-gray-600">{p.id || '—'}</td>
+                              <td className="py-1.5 pr-4 text-right text-gray-600">{fmtNum(p.scenario1_sum)}</td>
+                              <td className="py-1.5 pr-4 text-right text-gray-600">{fmtNum(p.scenario2_sum)}</td>
+                              <td className={`py-1.5 text-right ${p.pct_change < 0 ? 'text-green-600' : p.pct_change > 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                                {fmtPct(p.pct_change)}
+                              </td>
+                            </tr>
+                          ))}
+                          {/* Total surface row */}
+                          <tr key={`${key}-total`} className="border-t border-gray-200">
+                            <td className="py-1.5 pr-4 text-gray-500 italic">Total surface</td>
+                            <td className="py-1.5 pr-4 text-right font-bold text-gray-800">{fmtNum(r.total.scenario1_sum)}</td>
+                            <td className="py-1.5 pr-4 text-right font-bold text-gray-800">{fmtNum(r.total.scenario2_sum)}</td>
+                            <td className={`py-1.5 text-right font-bold ${r.total.pct_change < 0 ? 'text-green-600' : r.total.pct_change > 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                              {fmtPct(r.total.pct_change)}
+                            </td>
+                          </tr>
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
